@@ -31,6 +31,7 @@
    Version 1.1 : Fixed bug in code to create 4d matrix
 */
 
+#include <pmmintrin.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/time.h>
@@ -38,6 +39,8 @@
 #include <omp.h>
 #include <math.h>
 #include <stdint.h>
+#include <immintrin.h>
+#include <xmmintrin.h>
 
 /* the following two definitions of DEBUGGING control whether or not
    debugging information is written out. To put the program into
@@ -316,14 +319,59 @@ void multichannel_conv(float *** image, int16_t **** kernels,
 }
 
 /* the fast version of matmul written by the student */
-void student_conv(float *** image, int16_t **** kernels, float *** output,
-               int width, int height, int nchannels, int nkernels,
-               int kernel_order)
-{
-  // this call here is just dummy code that calls the slow, simple, correct version.
-  // insert your own code instead
-  multichannel_conv(image, kernels, output, width,
-                    height, nchannels, nkernels, kernel_order);
+void student_conv(float *** image, int16_t **** kernels, float *** output, int width, int height, int nchannels, int nkernels, int kernel_order) {
+    int h, w, x, y, c, m;
+
+    double (*z)[nkernels][kernel_order][kernel_order][nchannels]
+        = malloc(sizeof(double) * nkernels * kernel_order * kernel_order * nchannels);
+
+    for ( int m = 0; m < nkernels; m++ ) {
+        for (int x = 0; x < kernel_order; x++) {
+            for (int y = 0; y < kernel_order; y++) {
+                for (int c = 0; c < nchannels; c++) {
+                    (*z)[m][x][y][c] = kernels[m][c][x][y];
+                }
+            }
+        }
+    }
+
+    double(*i)[width+kernel_order][height+kernel_order][nchannels]
+        = malloc(sizeof(double) * (width+kernel_order) * (height+kernel_order) * nchannels);
+    
+  
+    for (int x = 0; x < width + kernel_order; x++) {
+        for (int y = 0; y < height + kernel_order; y++) {
+            for (int c = 0; c < nchannels; c++) {
+                (*i)[x][y][c] = image[x][y][c];
+            }
+        }
+    }
+
+    int flip = 0;
+
+    for ( m = 0; m < nkernels; m++ ) {
+        #pragma omp parallel for collapse(2) 
+        for ( w = 0; w < width; w++ ) {
+            for ( h = 0; h < height; h++ ) {
+                __m128d s2 = _mm_setzero_pd();
+                for (x = 0; x < kernel_order; x++) {
+                    for (y = 0; y < kernel_order; y++) {
+                        for (c = 0; c < nchannels; c += 2) {
+                            __m128d i2 = _mm_load_pd(&(*i)[w+x][h+y][c]);
+                            __m128d k2 = _mm_load_pd(&(*z)[m][x][y][c]);
+                            __m128d p2 = _mm_mul_pd(i2, k2);
+                            s2 = _mm_add_pd(s2, p2);
+                        }
+                    }
+                }
+
+                s2 = _mm_hadd_pd(s2, s2);
+                double sum ;
+                _mm_store_sd(&sum, s2);
+                output[m][w][h] = sum;
+            }
+        }
+    }
 }
 
 int main(int argc, char ** argv)
@@ -372,8 +420,16 @@ int main(int argc, char ** argv)
   //DEBUGGING(write_out(A, a_dim1, a_dim2));
 
   /* use a simple multichannel convolution routine to produce control result */
-  multichannel_conv(image, kernels, control_output, width,
-                    height, nchannels, nkernels, kernel_order);
+  /* record starting time of student's code*/
+  gettimeofday(&start_time, NULL);
+  multichannel_conv(image, kernels, control_output, width, height, nchannels,
+                    nkernels, kernel_order);
+  gettimeofday(&stop_time, NULL);
+  mul_time = (stop_time.tv_sec - start_time.tv_sec) * 1000000L +
+    (stop_time.tv_usec - start_time.tv_usec);
+  printf("Original conv time: %10lld microseconds\n", mul_time);
+
+  double real = mul_time;
 
   /* record starting time of student's code*/
   gettimeofday(&start_time, NULL);
@@ -386,7 +442,11 @@ int main(int argc, char ** argv)
   gettimeofday(&stop_time, NULL);
   mul_time = (stop_time.tv_sec - start_time.tv_sec) * 1000000L +
     (stop_time.tv_usec - start_time.tv_usec);
-  printf("Student conv time: %lld microseconds\n", mul_time);
+  printf("Student conv time:  %10lld microseconds\n", mul_time);
+
+  double fraudulent = mul_time;
+
+  printf("Speedup factor %lf\n", real / fraudulent);
 
   DEBUGGING(write_out(output, nkernels, width, height));
 
