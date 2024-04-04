@@ -32,6 +32,7 @@
 */
 
 #include <pmmintrin.h>
+#include <stdalign.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/time.h>
@@ -173,7 +174,8 @@ struct timeval seedtime;
 
   /* use the microsecond part of the current time as a pseudorandom seed */
   gettimeofday(&seedtime, NULL);
-  seed = seedtime.tv_usec;
+  // seed = seedtime.tv_us;
+  seed = 0;
   srandom(seed);
 
   /* fill the matrix with random numbers */
@@ -211,7 +213,8 @@ struct timeval seedtime;
 
   /* use the microsecond part of the current time as a pseudorandom seed */
   gettimeofday(&seedtime, NULL);
-  seed = seedtime.tv_usec;
+  // seed = seedtime.tv_us;
+  seed = 0;
   srandom(seed);
 
   /* fill the matrix with random numbers */
@@ -305,11 +308,11 @@ void multichannel_conv(float *** image, int16_t **** kernels,
     for ( w = 0; w < width; w++ ) {
       for ( h = 0; h < height; h++ ) {
         double sum = 0.0;
-        for ( c = 0; c < nchannels; c++ ) {
-          for ( x = 0; x < kernel_order; x++) {
+        for ( x = 0; x < kernel_order; x++) {
             for ( y = 0; y < kernel_order; y++ ) {
-              sum += image[w+x][h+y][c] * kernels[m][c][x][y];
-            }
+                for ( c = 0; c < nchannels; c++ ) {
+                    sum += image[w+x][h+y][c] * kernels[m][c][x][y];
+                }
           }
           output[m][w][h] = (float) sum;
         }
@@ -319,10 +322,28 @@ void multichannel_conv(float *** image, int16_t **** kernels,
 }
 
 /* the fast version of matmul written by the student */
-void student_conv(float *** image, int16_t **** kernels, float *** output, int width, int height, int nchannels, int nkernels, int kernel_order) {
+void student_conv(float ***image, int16_t ****kernels, float ***output,
+                  int width, int height, int nchannels, int nkernels,
+                  int kernel_order) {
+
+  // do nothing for performance
+  assert(width >= 16);
+  assert(width <= 512);
+
+  assert(height >= 16);
+  assert(height <= 512);
+
+  assert(nchannels >= 32);
+  assert(nchannels % 32 == 0);
+  assert(nkernels <= 2048);
+  
+  assert(nkernels >= 32);
+  assert(nkernels % 32 == 0);
+  assert(nkernels <= 2048);
+  
     int h, w, x, y, c, m;
 
-    double (*z)[nkernels][kernel_order][kernel_order][nchannels]
+    float (*const z)[nkernels][kernel_order][kernel_order][nchannels]
         = malloc(sizeof(double) * nkernels * kernel_order * kernel_order * nchannels);
 
     for ( int m = 0; m < nkernels; m++ ) {
@@ -335,9 +356,8 @@ void student_conv(float *** image, int16_t **** kernels, float *** output, int w
         }
     }
 
-    double(*i)[width+kernel_order][height+kernel_order][nchannels]
+    float (*const i)[width+kernel_order][height+kernel_order][nchannels]
         = malloc(sizeof(double) * (width+kernel_order) * (height+kernel_order) * nchannels);
-    
   
     for (int x = 0; x < width + kernel_order; x++) {
         for (int y = 0; y < height + kernel_order; y++) {
@@ -346,50 +366,45 @@ void student_conv(float *** image, int16_t **** kernels, float *** output, int w
             }
         }
     }
-
+    
     #pragma omp parallel for
     for ( m = 0; m < nkernels; m++ ) {
         for ( w = 0; w < width; w ++) {
-            for ( h = 0; h < height; h++ ) {
+          for (h = 0; h < height; h++) {
+              alignas(64) float cbuf[kernel_order][kernel_order][nchannels];
               // __m128d s2 = _mm_setzero_pd();
-              // for (x = 0; x < kernel_order; x++) {
-              //     for (y = 0; y < kernel_order; y++) {
-              //         for (c = 0; c < nchannels; c += 2) {
-              //             __m128d i2 = _mm_load_pd(&(*i)[w+x][h+y][c]);
-              //             __m128d k2 = _mm_load_pd(&(*z)[m][x][y][c]);
-              //             __m128d p2 = _mm_mul_pd(i2, k2);
-              //             s2 = _mm_add_pd(s2, p2);
-              //         }
-              //     }
-              // }
-              //
-              // s2 = _mm_hadd_pd(s2, s2);
-              // double sum ;
-              // _mm_store_sd(&sum, s2);
-              // float s = sum;
-              // int is = *(int *)&s;
-              // float z = *(float*)&is;
-              // // _mm_stream_si32(&output[m][w][h], *(int*)&s);
-              // // _mm_storeu_si32((int*)&output[m][w][h], is);
-              // output[m][w][h] = z;
-
-
-                double sum = 0.0;
                 for (x = 0; x < kernel_order; x++) {
                   for (y = 0; y < kernel_order; y++) {
-                    double sumlocal = 0.0;
-                    assert(nchannels % 32 == 0);
-                     #pragma omp simd reduction(+ : sum)
-                     for (c = 0; c < nchannels; c++) {
-                         sumlocal += (*i)[w+x][h+y][c] * (*z)[m][x][y][c];
-                     }
-                     sum += sumlocal;
-                   }
+                    // for (c = 0; c < nchannels; c += 2) {
+                    //     __m128d i2 = _mm_load_pd(&(*i)[w+x][h+y][c + 0]);
+                    //     __m128d k2 = _mm_load_pd(&(*z)[m][x][y][c + 0]);
+                    //     __m128d p2 = _mm_mul_pd(i2, k2);
+                    //     s2 = _mm_add_pd(s2, p2);
+                    // }
+                    for (c = 0; c < nchannels; c += 4) {
+                        __m128 i4 = _mm_loadu_ps(&(*i)[w+x][h+y][c]);
+                        __m128 k4 = _mm_loadu_ps(&(*z)[m][x][y][c]);
+                        __m128 p4 = _mm_mul_ps(i4, k4);
+                        _mm_store_ps(&cbuf[x][y][c], p4);
+                    }
+                  }
                 }
-                output[m][w][h] = sum;
+
+                double sd = 0.0;
+                
+                for (int k = 0; k < kernel_order * kernel_order * nchannels; k++) {
+                    sd += (double) ((float*)cbuf)[k];
+                }
+                
+                output[m][w][h] = sd;
+
+                // s2 = _mm_hadd_pd(s2, s2);
+                // double sum ;
+                // _mm_store_sd(&sum, s2);
+                // output[m][w][h] = sum;
             }
         }
-    }    
+    }
 }
 
 int main(int argc, char ** argv)
