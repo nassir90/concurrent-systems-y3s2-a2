@@ -347,31 +347,49 @@ void student_conv(float *** image, int16_t **** kernels, float *** output, int w
         }
     }
 
-    int flip = 0;
-
+    #pragma omp parallel for
     for ( m = 0; m < nkernels; m++ ) {
-        #pragma omp parallel for collapse(2) 
-        for ( w = 0; w < width; w++ ) {
+        for ( w = 0; w < width; w ++) {
             for ( h = 0; h < height; h++ ) {
-                __m128d s2 = _mm_setzero_pd();
-                for (x = 0; x < kernel_order; x++) {
-                    for (y = 0; y < kernel_order; y++) {
-                        for (c = 0; c < nchannels; c += 2) {
-                            __m128d i2 = _mm_load_pd(&(*i)[w+x][h+y][c]);
-                            __m128d k2 = _mm_load_pd(&(*z)[m][x][y][c]);
-                            __m128d p2 = _mm_mul_pd(i2, k2);
-                            s2 = _mm_add_pd(s2, p2);
-                        }
-                    }
-                }
+              // __m128d s2 = _mm_setzero_pd();
+              // for (x = 0; x < kernel_order; x++) {
+              //     for (y = 0; y < kernel_order; y++) {
+              //         for (c = 0; c < nchannels; c += 2) {
+              //             __m128d i2 = _mm_load_pd(&(*i)[w+x][h+y][c]);
+              //             __m128d k2 = _mm_load_pd(&(*z)[m][x][y][c]);
+              //             __m128d p2 = _mm_mul_pd(i2, k2);
+              //             s2 = _mm_add_pd(s2, p2);
+              //         }
+              //     }
+              // }
+              //
+              // s2 = _mm_hadd_pd(s2, s2);
+              // double sum ;
+              // _mm_store_sd(&sum, s2);
+              // float s = sum;
+              // int is = *(int *)&s;
+              // float z = *(float*)&is;
+              // // _mm_stream_si32(&output[m][w][h], *(int*)&s);
+              // // _mm_storeu_si32((int*)&output[m][w][h], is);
+              // output[m][w][h] = z;
 
-                s2 = _mm_hadd_pd(s2, s2);
-                double sum ;
-                _mm_store_sd(&sum, s2);
+
+                double sum = 0.0;
+                for (x = 0; x < kernel_order; x++) {
+                  for (y = 0; y < kernel_order; y++) {
+                    double sumlocal = 0.0;
+                    assert(nchannels % 32 == 0);
+                     #pragma omp simd reduction(+ : sum)
+                     for (c = 0; c < nchannels; c++) {
+                         sumlocal += (*i)[w+x][h+y][c] * (*z)[m][x][y][c];
+                     }
+                     sum += sumlocal;
+                   }
+                }
                 output[m][w][h] = sum;
             }
         }
-    }
+    }    
 }
 
 int main(int argc, char ** argv)
