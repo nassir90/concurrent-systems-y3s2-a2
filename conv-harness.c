@@ -388,6 +388,7 @@ void student_conv(float ***image, int16_t ****kernels, float ***output,
                       __m128d s2 = _mm_setzero_pd();
 
                       _mm_prefetch(&(*i)[w][h][0], _MM_HINT_T0);
+                      _mm_prefetch(&(*z_i)[m][x][y][0], _MM_HINT_T0);
                       for (int c = 0; c < nchannels; c += 2) {
                             __m128d i2 = _mm_load_pd(&(*i)[w][h][c]);
                             __m128d z2 = _mm_load_pd(&(*z_i)[m][x][y][c]);
@@ -395,12 +396,12 @@ void student_conv(float ***image, int16_t ****kernels, float ***output,
                             s2 = _mm_add_pd(s2, p2);
                       }
 
-                            double sum;
-                            s2 = _mm_hadd_pd(s2, s2);
-                            _mm_store_sd(&sum, s2);
-                        
-                            (*o)[m][x][y][w][h] = sum;
-                        }
+                      double sum;
+                      s2 = _mm_hadd_pd(s2, s2);
+                      _mm_store_sd(&sum, s2);
+                      
+                      (*o)[m][x][y][w][h] = sum;
+                    }
                 }
             }
         }
