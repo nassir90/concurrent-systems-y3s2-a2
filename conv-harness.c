@@ -385,13 +385,15 @@ void student_conv(float ***image, int16_t ****kernels, float ***output,
             for (int x = 0; x < kernel_order; x ++) {
                 for (int y = 0; y < kernel_order; y ++) {
                     for (int h = 0; h < height + kernel_order - 1; h ++) {
-                            __m128d s2 = _mm_setzero_pd();
-                            for ( int c = 0; c < nchannels; c += 2) {
-                                __m128d i2 = _mm_load_pd(&(*i)[w][h][c]);
-                                __m128d z2 = _mm_load_pd(&(*z_i)[m][x][y][c]);
-                                __m128d p2 = _mm_mul_pd(i2, z2);
-                                s2 = _mm_add_pd(s2, p2);
-                            }
+                      __m128d s2 = _mm_setzero_pd();
+
+                      _mm_prefetch(&(*i)[w][h][0], _MM_HINT_T0);
+                      for (int c = 0; c < nchannels; c += 2) {
+                            __m128d i2 = _mm_load_pd(&(*i)[w][h][c]);
+                            __m128d z2 = _mm_load_pd(&(*z_i)[m][x][y][c]);
+                            __m128d p2 = _mm_mul_pd(i2, z2);
+                            s2 = _mm_add_pd(s2, p2);
+                      }
 
                             double sum;
                             s2 = _mm_hadd_pd(s2, s2);
@@ -421,7 +423,7 @@ void student_conv(float ***image, int16_t ****kernels, float ***output,
                     }
                 }
             }
-        }
+            }
 
         for (int w = 0; w < width; w++) {
             for (int h = 0; h < height; h++) {
