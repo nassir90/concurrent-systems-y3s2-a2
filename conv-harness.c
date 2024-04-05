@@ -333,7 +333,7 @@ void student_conv(float ***image, int16_t ****kernels, float ***output,
     int h, w, x, y, c, m;
 
     float (*const z)[nkernels][kernel_order][kernel_order][nchannels]
-        = malloc(sizeof(double) * nkernels * kernel_order * kernel_order * nchannels);
+        = aligned_alloc(64, sizeof(double) * nkernels * kernel_order * kernel_order * nchannels);
 
     for ( int m = 0; m < nkernels; m++ ) {
         for (int x = 0; x < kernel_order; x++) {
@@ -346,7 +346,7 @@ void student_conv(float ***image, int16_t ****kernels, float ***output,
     }
 
     float (*const i)[width+kernel_order][height+kernel_order][nchannels]
-        = malloc(sizeof(double) * (width+kernel_order) * (height+kernel_order) * nchannels);
+        = aligned_alloc(64, sizeof(double) * (width+kernel_order) * (height+kernel_order) * nchannels);
   
     for (int x = 0; x < width + kernel_order; x++) {
         for (int y = 0; y < height + kernel_order; y++) {
@@ -365,7 +365,7 @@ void student_conv(float ***image, int16_t ****kernels, float ***output,
                 for (x = 0; x < kernel_order; x++) {
                     for (y = 0; y < kernel_order; y++) {
                         for (c = 0; c < nchannels; c += 4) {
-                            __m128 i4 = _mm_loadu_ps(&(*i)[w+x][h+y][c]);
+                            __m128 i4 = _mm_load_ps(&(*i)[w+x][h+y][c]); // LIKE DEATH FOR THE CACHE
                             __m128 k4 = _mm_load_ps(&(*z)[m][x][y][c]);
                             __m128 p4 = _mm_mul_ps(i4, k4);
 
