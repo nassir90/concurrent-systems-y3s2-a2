@@ -311,106 +311,115 @@ void multichannel_conv(float *** image, int16_t **** kernels,
                 for ( x = 0; x < kernel_order; x++) {
                     for ( y = 0; y < kernel_order; y++ ) {
                         for ( c = 0; c < nchannels; c++ ) {
-                            sum += image[w+x][h+y][c] * kernels[m][c][x][y];
+                            float p_ = image[w+x][h+y][c] * kernels[m][c][x][y];
+                            // printf("\tsum ((%dx%d [%d])·(%dx%d)) : %lf [old]\n", w+x, h+y, m, x, y, p_);
+                            // printf("conv (%d, %d): %lf [old]\n", x, y, p_);
+                            sum += p_;
                         }
+                        
                     }
                     output[m][w][h] = (float) sum;
                 }
             }
         }
     }
+    // printf("output[0][0][0]: %f [old]\n", output[0][0][0]);
 }
 
 /* the fast version of matmul written by the student */
 void student_conv(float ***image, int16_t ****kernels, float ***output,
                   int width, int height, int nchannels, int nkernels,
                   int kernel_order) {
-    assert(width >= 16 && width <= 512);
-    assert(height >= 16 && height <= 512);
-    assert(nchannels >= 32 && nchannels % 32 == 0 && nkernels <= 2048);
-    assert(nkernels >= 32 && nkernels % 32 == 0 && nkernels <= 2048);
+    // assert(width >= 16 && width <= 512);
+    // assert(height >= 16 && height <= 512);
+    // assert(nchannels >= 32 && nchannels % 32 == 0 && nkernels <= 2048);
+    // assert(nkernels >= 32 && nkernels % 32 == 0 && nkernels <= 2048);
     
-    float (*const z)[nkernels][kernel_order][kernel_order][nchannels]
-        = aligned_alloc(64, sizeof(double) * nkernels * kernel_order * kernel_order * nchannels);
-
+    float (*const z_i)
+        [nkernels]
+        [kernel_order]
+        [kernel_order]
+        [nchannels]
+        = aligned_alloc(64, sizeof(float)
+                        * nkernels
+                        * kernel_order
+                        * kernel_order
+                        * nchannels);
+    
     for ( int m = 0; m < nkernels; m++ ) {
         for (int x = 0; x < kernel_order; x++) {
             for (int y = 0; y < kernel_order; y++) {
                 for (int c = 0; c < nchannels; c++) {
-                    (*z)[m][x][y][c] = kernels[m][c][x][y];
+                    (*z_i)[m][x][y][c] = kernels[m][c][x][y];
                 }
             }
         }
     }
-
+    
     float (*const i)[width+kernel_order][height+kernel_order][nchannels]
-        = aligned_alloc(64, sizeof(double) * (width+kernel_order) * (height+kernel_order) * nchannels);
-  
+        = aligned_alloc(64, sizeof(float) * (width+kernel_order) * (height+kernel_order) * nchannels);
+    
     for (int x = 0; x < width + kernel_order; x++) {
         for (int y = 0; y < height + kernel_order; y++) {
             for (int c = 0; c < nchannels; c++) {
                 (*i)[x][y][c] = image[x][y][c];
             }
         }
+        }
+
+    double (*const o)
+        [nkernels]
+        [kernel_order]
+        [kernel_order]
+        [width  + kernel_order - 1]
+        [height + kernel_order - 1]
+        = aligned_alloc(64, sizeof(double)
+                        * nkernels
+                        * kernel_order
+                        * kernel_order
+                        * (width  + kernel_order - 1)
+                        * (height + kernel_order - 1));
+
+    #define CHUNK_SIZE 32
+
+    for (int m = 0; m < nkernels; m ++) {
+        for (int x = 0; x < kernel_order; x ++) {
+            for (int y = 0; y < kernel_order; y ++) {
+                for (int w_ = 0; w_ < width + kernel_order - 1; w_ += CHUNK_SIZE) {
+                    for (int h_ = 0; h_ < height + kernel_order - 1; h_ += CHUNK_SIZE) {
+                        for (int w = w_; w < width + kernel_order - 1 && w < w_ + CHUNK_SIZE; w ++) {
+                            for (int h = h_; h < height + kernel_order - 1 && h < h_ + CHUNK_SIZE; h ++) {
+                                double sum = 0.0;
+                                for ( int c = 0; c < nchannels; c ++) {
+                                    float i_ = (*i)[w][h][c]; // 256B
+                                    float z_ = (*z_i)[m][x][y][c]; // 256B
+                                    float p_ = i_ * z_;
+                                    sum += p_; // BOTTLENECK (DEPENDENCY)
+                                }
+                                (*o)[m][x][y][w][h] = sum;
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
-    float (*const o)[width][height][nkernels]
-        = aligned_alloc(64, sizeof(double) * width * height * nkernels);
-    
-#pragma omp parallel for firstprivate(i, z)
     for ( int m = 0; m < nkernels; m++ ) {
-        for ( int w = 0; w < width; w ++) {
+        for (int w = 0; w < width; w++) {
             for (int h = 0; h < height; h++) {
                 double sum = 0.0;
                 for (int x = 0; x < kernel_order; x++) {
                     for (int y = 0; y < kernel_order; y++) {
-                        for (int c = 0; c < nchannels; c += 8) {
-                            __m128 i4_a = _mm_load_ps(&(*i)[w+x][h+y][c]); // LIKE DEATH FOR THE CACHE
-                            __m128 k4_a = _mm_load_ps(&(*z)[m][x][y][c]);
-                            __m128 i4_b = _mm_load_ps(&(*i)[w+x][h+y][c + 4]); // LIKE DEATH FOR THE CACHE
-                            __m128 k4_b = _mm_load_ps(&(*z)[m][x][y][c + 4]);
-                            __m128 p4_a = _mm_mul_ps(i4_a, k4_a);
-                            __m128 p4_b = _mm_mul_ps(i4_b, k4_b);
-                            __m128 p4 = _mm_add_ps(p4_a, p4_b);
-
-                            // __m128d p4_lower = _mm_cvtps_pd(p4);
-                            // _mm_store_pd(&cbuf[x][y][c], p4_lower);
-                            // __m128d p4_upper = _mm_cvtps_pd(_mm_shuffle_ps(p4, p4, _MM_SHUFFLE(3, 3, 3, )));
-                            // _mm_store_pd(&cbuf[x][y][c + 2], p4_upper);
-
-                            // _mm_store_ps(&cbuf[x][y][c], p4);
-
-                            float df[4];
-                            _mm_store_ps(df, p4);
-                            sum += df[0];
-                            sum += df[1];
-                            sum += df[2];
-                            sum += df[3];
-                            
-                            // cbuf[x][y][c + 0] = df[0];
-                            // cbuf[x][y][c + 1] = df[1];
-                            // cbuf[x][y][c + 2] = df[2];
-                            // cbuf[x][y][c + 3] = df[3];
-                        }
+                        sum += (*o)[m][x][y][w+x][h+y];
                     }
                 }
-
-                //__m128d s2 = _mm_setzero_pd();
-                //for (int k = 0; k < kernel_order * kernel_order * nchannels; k += 2) {
-                //  __m128d p2 = _mm_load_pd(&((double *)cbuf)[k]);
-                //  s2 = _mm_add_pd(s2, p2);
-                //}
-                // s2 = _mm_add_pd(s2, s2);
-                // _mm_store_sd(&sum, s2);
-
-                for (int k = 0; k < kernel_order * kernel_order * nchannels; k ++) {
-                    // sum += ((double*)cbuf)[k];
-                }
-                
                 output[m][w][h] = sum;
             }
         }
     }
+
+    // printf("output[0][0][0]: %f\n", output[0][0][0]);
 }
 
 int main(int argc, char ** argv)
