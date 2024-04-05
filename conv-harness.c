@@ -335,12 +335,12 @@ void student_conv(float ***image, int16_t ****kernels, float ***output,
     // assert(nchannels >= 32 && nchannels % 32 == 0 && nkernels <= 2048);
     // assert(nkernels >= 32 && nkernels % 32 == 0 && nkernels <= 2048);
     
-    float (*const z_i)
+    double (*const z_i)
         [nkernels]
         [kernel_order]
         [kernel_order]
         [nchannels]
-        = aligned_alloc(64, sizeof(float)
+        = aligned_alloc(64, sizeof(double)
                         * nkernels
                         * kernel_order
                         * kernel_order
@@ -356,8 +356,8 @@ void student_conv(float ***image, int16_t ****kernels, float ***output,
         }
     }
     
-    float (*const i)[width+kernel_order][height+kernel_order][nchannels]
-        = aligned_alloc(64, sizeof(float) * (width+kernel_order) * (height+kernel_order) * nchannels);
+    double (*const i)[width+kernel_order][height+kernel_order][nchannels]
+        = aligned_alloc(64, sizeof(double) * (width+kernel_order) * (height+kernel_order) * nchannels);
     
     for (int x = 0; x < width + kernel_order; x++) {
         for (int y = 0; y < height + kernel_order; y++) {
@@ -380,25 +380,23 @@ void student_conv(float ***image, int16_t ****kernels, float ***output,
                         * (width  + kernel_order - 1)
                         * (height + kernel_order - 1));
 
-    #define CHUNK_SIZE 32
-
     for (int m = 0; m < nkernels; m ++) {
         for (int x = 0; x < kernel_order; x ++) {
             for (int y = 0; y < kernel_order; y ++) {
-                for (int w_ = 0; w_ < width + kernel_order - 1; w_ += CHUNK_SIZE) {
-                    for (int h_ = 0; h_ < height + kernel_order - 1; h_ += CHUNK_SIZE) {
-                        for (int w = w_; w < width + kernel_order - 1 && w < w_ + CHUNK_SIZE; w ++) {
-                            for (int h = h_; h < height + kernel_order - 1 && h < h_ + CHUNK_SIZE; h ++) {
-                                double sum = 0.0;
-                                for ( int c = 0; c < nchannels; c ++) {
-                                    float i_ = (*i)[w][h][c]; // 256B
-                                    float z_ = (*z_i)[m][x][y][c]; // 256B
-                                    float p_ = i_ * z_;
-                                    sum += p_; // BOTTLENECK (DEPENDENCY)
-                                }
-                                (*o)[m][x][y][w][h] = sum;
-                            }
+                for (int w = 0; w < width + kernel_order - 1; w ++) {
+                    for (int h = 0; h < height + kernel_order - 1; h ++) {
+                        __m128d s2 = _mm_setzero_pd();
+                        for ( int c = 0; c < nchannels; c += 2) {
+                            __m128d i2 = _mm_load_pd(&(*i)[w][h][c]);
+                            __m128d z2 = _mm_load_pd(&(*z_i)[m][x][y][c]);
+                            __m128d p2 = _mm_mul_pd(i2, z2);
+                            s2 = _mm_add_pd(s2, p2);
                         }
+
+                        s2 = _mm_hadd_pd(s2, s2);
+                        _mm_store_sd(&sum, s2);
+                        
+                        (*o)[m][x][y][w][h] = sum;
                     }
                 }
             }
@@ -406,17 +404,30 @@ void student_conv(float ***image, int16_t ****kernels, float ***output,
     }
 
     for ( int m = 0; m < nkernels; m++ ) {
-        for (int w = 0; w < width; w++) {
-            for (int h = 0; h < height; h++) {
-                double sum = 0.0;
-                for (int x = 0; x < kernel_order; x++) {
-                    for (int y = 0; y < kernel_order; y++) {
-                        sum += (*o)[m][x][y][w+x][h+y];
+        double (*const t)[width][height]
+            = aligned_alloc(64, sizeof(double) * width * height);
+        int k = 0;
+        for (; k < width * height; k += 2)
+            _mm_store_si128(&(*t)[0][k], _mm_setzero_si128());
+        for (; k < width * height; k++)
+            ((double*)&(*t)[0][0])[k] = 0.0;
+        
+        for (int x = 0; x < kernel_order; x++) {
+            for (int y = 0; y < kernel_order; y++) {
+                for (int w = 0; w < width; w++) {
+                    for (int h = 0; h < height; h++) {
+                        (*t)[w][h] += (*o)[m][x][y][w+x][h+y];
                     }
                 }
-                output[m][w][h] = sum;
             }
         }
+
+        for (int w = 0; w < width; w++) {
+            for (int h = 0; h < height; h++) {
+                output[m][w][h] = (*t)[w][h];
+            }
+        }
+        free(t);
     }
 
     // printf("output[0][0][0]: %f\n", output[0][0][0]);
