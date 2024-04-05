@@ -325,21 +325,10 @@ void multichannel_conv(float *** image, int16_t **** kernels,
 void student_conv(float ***image, int16_t ****kernels, float ***output,
                   int width, int height, int nchannels, int nkernels,
                   int kernel_order) {
-
-  // do nothing for performance
-  assert(width >= 16);
-  assert(width <= 512);
-
-  assert(height >= 16);
-  assert(height <= 512);
-
-  assert(nchannels >= 32);
-  assert(nchannels % 32 == 0);
-  assert(nkernels <= 2048);
-  
-  assert(nkernels >= 32);
-  assert(nkernels % 32 == 0);
-  assert(nkernels <= 2048);
+  assert(width >= 16 && width <= 512);
+  assert(height >= 16 && height <= 512);
+  assert(nchannels >= 32 && nchannels % 32 == 0 && nkernels <= 2048);
+  assert(nkernels >= 32 && nkernels % 32 == 0 && nkernels <= 2048);
   
     int h, w, x, y, c, m;
 
@@ -367,41 +356,52 @@ void student_conv(float ***image, int16_t ****kernels, float ***output,
         }
     }
     
-    #pragma omp parallel for
+    #pragma omp parallel for collapse(3)
     for ( m = 0; m < nkernels; m++ ) {
         for ( w = 0; w < width; w ++) {
           for (h = 0; h < height; h++) {
-              alignas(64) float cbuf[kernel_order][kernel_order][nchannels];
-              // __m128d s2 = _mm_setzero_pd();
+              double cbuf[kernel_order][kernel_order][nchannels];
+              double sum = 0.0;
                 for (x = 0; x < kernel_order; x++) {
-                  for (y = 0; y < kernel_order; y++) {
-                    // for (c = 0; c < nchannels; c += 2) {
-                    //     __m128d i2 = _mm_load_pd(&(*i)[w+x][h+y][c + 0]);
-                    //     __m128d k2 = _mm_load_pd(&(*z)[m][x][y][c + 0]);
-                    //     __m128d p2 = _mm_mul_pd(i2, k2);
-                    //     s2 = _mm_add_pd(s2, p2);
-                    // }
-                    for (c = 0; c < nchannels; c += 4) {
-                        __m128 i4 = _mm_loadu_ps(&(*i)[w+x][h+y][c]);
-                        __m128 k4 = _mm_loadu_ps(&(*z)[m][x][y][c]);
-                        __m128 p4 = _mm_mul_ps(i4, k4);
-                        _mm_store_ps(&cbuf[x][y][c], p4);
+                    for (y = 0; y < kernel_order; y++) {
+                        for (c = 0; c < nchannels; c += 4) {
+                            __m128 i4 = _mm_loadu_ps(&(*i)[w+x][h+y][c]);
+                            __m128 k4 = _mm_load_ps(&(*z)[m][x][y][c]);
+                            __m128 p4 = _mm_mul_ps(i4, k4);
+
+                            // __m128d p4_lower = _mm_cvtps_pd(p4);
+                            // _mm_store_pd(&cbuf[x][y][c], p4_lower);
+                            // __m128d p4_upper = _mm_cvtps_pd(_mm_shuffle_ps(p4, p4, _MM_SHUFFLE(3, 3, 3, )));
+                            // _mm_store_pd(&cbuf[x][y][c + 2], p4_upper);
+
+                            // _mm_store_ps(&cbuf[x][y][c], p4);
+
+                            float df[4];
+                            _mm_store_ps(df, p4);
+                            // sum += df[0] + df[1];
+                            // sum += df[2] + df[3];
+                            
+                            cbuf[x][y][c + 0] = df[0];
+                            cbuf[x][y][c + 1] = df[1];
+                            cbuf[x][y][c + 2] = df[2];
+                            cbuf[x][y][c + 3] = df[3];
+                        }
                     }
-                  }
                 }
 
-                double sd = 0.0;
-                
-                for (int k = 0; k < kernel_order * kernel_order * nchannels; k++) {
-                    sd += (double) ((float*)cbuf)[k];
-                }
-                
-                output[m][w][h] = sd;
-
-                // s2 = _mm_hadd_pd(s2, s2);
-                // double sum ;
+              //__m128d s2 = _mm_setzero_pd();
+              //for (int k = 0; k < kernel_order * kernel_order * nchannels; k += 2) {
+              //  __m128d p2 = _mm_load_pd(&((double *)cbuf)[k]);
+                //  s2 = _mm_add_pd(s2, p2);
+                    //}
+                // s2 = _mm_add_pd(s2, s2);
                 // _mm_store_sd(&sum, s2);
-                // output[m][w][h] = sum;
+
+                for (int k = 0; k < kernel_order * kernel_order * nchannels; k ++) {
+                    sum += ((double*)cbuf)[k];
+                }
+                
+                output[m][w][h] = sum;
             }
         }
     }
