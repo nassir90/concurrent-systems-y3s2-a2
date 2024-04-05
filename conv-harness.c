@@ -381,23 +381,24 @@ void student_conv(float ***image, int16_t ****kernels, float ***output,
                         * (height + kernel_order - 1));
 
     for (int m = 0; m < nkernels; m ++) {
-        for (int x = 0; x < kernel_order; x ++) {
-            for (int y = 0; y < kernel_order; y ++) {
-                for (int w = 0; w < width + kernel_order - 1; w ++) {
+        for (int w = 0; w < width + kernel_order - 1; w ++) {
+            for (int x = 0; x < kernel_order; x ++) {
+                for (int y = 0; y < kernel_order; y ++) {
                     for (int h = 0; h < height + kernel_order - 1; h ++) {
-                        __m128d s2 = _mm_setzero_pd();
-                        for ( int c = 0; c < nchannels; c += 2) {
-                            __m128d i2 = _mm_load_pd(&(*i)[w][h][c]);
-                            __m128d z2 = _mm_load_pd(&(*z_i)[m][x][y][c]);
-                            __m128d p2 = _mm_mul_pd(i2, z2);
-                            s2 = _mm_add_pd(s2, p2);
-                        }
+                            __m128d s2 = _mm_setzero_pd();
+                            for ( int c = 0; c < nchannels; c += 2) {
+                                __m128d i2 = _mm_load_pd(&(*i)[w][h][c]);
+                                __m128d z2 = _mm_load_pd(&(*z_i)[m][x][y][c]);
+                                __m128d p2 = _mm_mul_pd(i2, z2);
+                                s2 = _mm_add_pd(s2, p2);
+                            }
 
-                        s2 = _mm_hadd_pd(s2, s2);
-                        _mm_store_sd(&sum, s2);
+                            double sum;
+                            s2 = _mm_hadd_pd(s2, s2);
+                            _mm_store_sd(&sum, s2);
                         
-                        (*o)[m][x][y][w][h] = sum;
-                    }
+                            (*o)[m][x][y][w][h] = sum;
+                        }
                 }
             }
         }
