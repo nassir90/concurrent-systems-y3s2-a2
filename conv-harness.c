@@ -405,6 +405,9 @@ void student_conv(float ***image, int16_t ****kernels, float ***output,
                             s2 = _mm_hadd_pd(s2, s2);
                             _mm_store_sd(&sum, s2);
                             (*t)[m][w-x][h-y] += sum;
+                            #ifdef PRINT_PLOT_TEXT
+                            if (m == 0) printf("writing to (*t)[%d][%d][%d]\n", m, w-x, h-y);
+                            #endif
                         }
                     }
                 }
