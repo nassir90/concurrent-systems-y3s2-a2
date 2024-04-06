@@ -368,7 +368,8 @@ void student_conv(float ***image, int16_t ****kernels, float ***output,
                     for (int y = 0; y < kernel_order; y++) {
                         if (h-y < 0 || h-y >= height)
                             continue;
-                        double sum = 0.0;
+                        // double sum = 0.0;
+                        __m128d s2 = _mm_setzero_pd();
                         _mm_prefetch(&image[w][h][0], _MM_HINT_T0);
                         _mm_prefetch(&(*z)[m][x][y][0], _MM_HINT_T0);
                         for (int c = 0; c < nchannels; c += 8) {
@@ -379,12 +380,14 @@ void student_conv(float ***image, int16_t ****kernels, float ***output,
                             __m128 p4_a = _mm_mul_ps(i4_a, k4_a);
                             __m128 p4_b = _mm_mul_ps(i4_b, k4_b);
                             __m128 p4 = _mm_add_ps(p4_a, p4_b);
-
-                            float df[4];
-                            _mm_store_ps(df, p4);
-                            sum += (double)df[0] + (double)df[1] + (double)df[2] + (double) df[3];
+                            __m128d p4_01 = _mm_cvtps_pd(p4);
+                            __m128d p4_23 = _mm_cvtps_pd(_mm_shuffle_ps(p4, p4, _MM_SHUFFLE(3, 2, 3, 2)));
+                            __m128d p4_0123 = _mm_add_pd(p4_01, p4_23);
+                            s2 = _mm_add_pd(s2, p4_0123);
                         }
-
+                        double sum;
+                        s2 = _mm_hadd_pd(s2, s2);
+                        _mm_store_sd(&sum, s2);
                         (*t)[m][w-x][h-y] += sum;
                     }
                 }
