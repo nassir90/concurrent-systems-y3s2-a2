@@ -174,7 +174,7 @@ int16_t **** gen_random_4d_matrix_int16(int dim0, int dim1, int dim2, int dim3)
 
     /* use the microsecond part of the current time as a pseudorandom seed */
     gettimeofday(&seedtime, NULL);
-    // seed = seedtime.tv_us;
+    // seed = seedtime.tv_usec;
     seed = 0;
     srandom(seed);
 
@@ -335,103 +335,110 @@ void student_conv(float ***image, int16_t ****kernels, float ***output,
     // assert(nchannels >= 32 && nchannels % 32 == 0 && nkernels <= 2048);
     // assert(nkernels >= 32 && nkernels % 32 == 0 && nkernels <= 2048);
     
-    double (*const z_i)
+    float (*const z)
         [nkernels]
         [kernel_order]
         [kernel_order]
         [nchannels]
-        = aligned_alloc(64, sizeof(double)
+        = aligned_alloc(64, sizeof(float)
                         * nkernels
                         * kernel_order
                         * kernel_order
                         * nchannels);
     
-    for ( int m = 0; m < nkernels; m++ ) {
+#pragma omp parallel for
+    for (int m = 0; m < nkernels; m++ ) {
         for (int x = 0; x < kernel_order; x++) {
             for (int y = 0; y < kernel_order; y++) {
                 for (int c = 0; c < nchannels; c++) {
-                    (*z_i)[m][x][y][c] = kernels[m][c][x][y];
+                    (*z)[m][x][y][c] = kernels[m][c][x][y];
                 }
             }
         }
     }
-    
-    double (*const i)[width+kernel_order][height+kernel_order][nchannels]
-        = aligned_alloc(64, sizeof(double) * (width+kernel_order) * (height+kernel_order) * nchannels);
-    
-    for (int x = 0; x < width + kernel_order; x++) {
-        for (int y = 0; y < height + kernel_order; y++) {
-            for (int c = 0; c < nchannels; c++) {
-                (*i)[x][y][c] = image[x][y][c];
-            }
-        }
-        }
 
-    double (*const o)
-        [nkernels]
-        [kernel_order]
-        [kernel_order]
-        [width  + kernel_order - 1]
-        [height + kernel_order - 1]
-        = aligned_alloc(64, sizeof(double)
-                        * nkernels
-                        * kernel_order
-                        * kernel_order
-                        * (width  + kernel_order - 1)
-                        * (height + kernel_order - 1));
+    // no need anymore…, using floats and the image is aligned somehow
+    // float (*const i)[width+kernel_order][height+kernel_order][nchannels]
+    //     = aligned_alloc(64, sizeof(float) * (width+kernel_order) * (height+kernel_order) * nchannels);
+    // 
+    // 
+    // for (int x = 0; x < width + kernel_order; x++) {
+    //     for (int y = 0; y < height + kernel_order; y++) {
+    //         for (int c = 0; c < nchannels; c++) {
+    //             (*i)[x][y][c] = image[x][y][c];
+    //         }
+    //     }
+        // }
 
+    // double(*const o)[nkernels][kernel_order][kernel_order]
+    //     [width + kernel_order - 1][height + kernel_order - 1] =
+    //     aligned_alloc(64, sizeof(double) * nkernels *
+    //                   kernel_order * kernel_order *
+    //                   (width + kernel_order - 1) *
+    //                   (height + kernel_order - 1));
+
+    double(*const t)[nkernels][width + kernel_order][height + kernel_order] =
+        aligned_alloc(64, sizeof(double) * nkernels * (width + kernel_order * 2) * (height + kernel_order * 2));
+
+    // memory is zeroed by default on linux…
+    // int k;
+    // for (k = 0; k < nkernels * width * height; k += 2) {
+    //     _mm_store_si128(&(*t)[0][0][k], _mm_setzero_si128());
+    // }
+    // for (k = k; k < nkernels * width * height; k++) {
+    //     ((double *)&(*t)[0][0][0])[k] = 0.0;
+    // }
+
+#pragma omp parallel for
     for (int m = 0; m < nkernels; m ++) {
         for (int w = 0; w < width + kernel_order - 1; w ++) {
             for (int x = 0; x < kernel_order; x ++) {
                 for (int y = 0; y < kernel_order; y ++) {
                     for (int h = 0; h < height + kernel_order - 1; h ++) {
-                      __m128d s2 = _mm_setzero_pd();
+                        double sum = 0.0;
 
-                      _mm_prefetch(&(*i)[w][h][0], _MM_HINT_T0);
-                      _mm_prefetch(&(*z_i)[m][x][y][0], _MM_HINT_T0);
-                      for (int c = 0; c < nchannels; c += 2) {
-                            __m128d i2 = _mm_load_pd(&(*i)[w][h][c]);
-                            __m128d z2 = _mm_load_pd(&(*z_i)[m][x][y][c]);
-                            __m128d p2 = _mm_mul_pd(i2, z2);
-                            s2 = _mm_add_pd(s2, p2);
-                      }
+                        _mm_prefetch(&image[w][h][0], _MM_HINT_T0);
+                        _mm_prefetch(&(*z)[m][x][y][0], _MM_HINT_T0);
+                        for (int c = 0; c < nchannels; c += 8) {
+                            __m128 i4_a = _mm_load_ps(&image[w][h][c]); // LIKE DEATH FOR THE CACHE
+                            __m128 k4_a = _mm_load_ps(&(*z)[m][x][y][c]);
+                            __m128 i4_b = _mm_load_ps(&image[w][h][c + 4]); // LIKE DEATH FOR THE CACHE
+                            __m128 k4_b = _mm_load_ps(&(*z)[m][x][y][c + 4]);
+                            __m128 p4_a = _mm_mul_ps(i4_a, k4_a);
+                            __m128 p4_b = _mm_mul_ps(i4_b, k4_b);
+                            __m128 p4 = _mm_add_ps(p4_a, p4_b);
 
-                      double sum;
-                      s2 = _mm_hadd_pd(s2, s2);
-                      _mm_store_sd(&sum, s2);
-                      
-                      (*o)[m][x][y][w][h] = sum;
+                            float df[4];
+                            _mm_store_ps(df, p4);
+                            sum += df[0];
+                            sum += df[1];
+                            sum += df[2];
+                            sum += df[3];
+                        }
+
+                        // (*o)[m][x][y][w][h] = sum;
+                        (*t)[m][kernel_order+w-x][kernel_order+h-y] += sum;
                     }
                 }
             }
         }
-    }
 
-    for ( int m = 0; m < nkernels; m++ ) {
-        double (*const t)[width][height]
-            = aligned_alloc(64, sizeof(double) * width * height);
-        int k = 0;
-        for (; k < width * height; k += 2)
-            _mm_store_si128(&(*t)[0][k], _mm_setzero_si128());
-        for (; k < width * height; k++)
-            ((double*)&(*t)[0][0])[k] = 0.0;
-        
-        for (int x = 0; x < kernel_order; x++) {
-            for (int y = 0; y < kernel_order; y++) {
-                for (int w = 0; w < width; w++) {
-                    for (int h = 0; h < height; h++) {
-                        (*t)[w][h] += (*o)[m][x][y][w+x][h+y];
-                    }
-                }
-            }
-            }
+        // not needed?
+        // for (int x = 0; x < kernel_order; x++) {
+        //     for (int y = 0; y < kernel_order; y++) {
+        //         for (int w = 0; w < width; w++) {
+        //             for (int h = 0; h < height; h++) {
+        //                 // (*t)[m][w][h] += (*o)[m][x][y][w+x][h+y];
+        //             }
+        //         }
+        //     }
+                // }
 
         for (int w = 0; w < width; w++) {
             for (int h = 0; h < height; h++) {
-                output[m][w][h] = (*t)[w][h];
+                output[m][w][h] = (*t)[m][kernel_order+w][kernel_order+h];
             }
         }
-        free(t);
     }
 
     // printf("output[0][0][0]: %f\n", output[0][0][0]);
