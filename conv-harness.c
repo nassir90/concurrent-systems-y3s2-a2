@@ -357,37 +357,8 @@ void student_conv(float ***image, int16_t ****kernels, float ***output,
         }
     }
 
-    // no need anymore…, using floats and the image is aligned somehow
-    // float (*const i)[width+kernel_order][height+kernel_order][nchannels]
-    //     = aligned_alloc(64, sizeof(float) * (width+kernel_order) * (height+kernel_order) * nchannels);
-    // 
-    // 
-    // for (int x = 0; x < width + kernel_order; x++) {
-    //     for (int y = 0; y < height + kernel_order; y++) {
-    //         for (int c = 0; c < nchannels; c++) {
-    //             (*i)[x][y][c] = image[x][y][c];
-    //         }
-    //     }
-        // }
-
-    // double(*const o)[nkernels][kernel_order][kernel_order]
-    //     [width + kernel_order - 1][height + kernel_order - 1] =
-    //     aligned_alloc(64, sizeof(double) * nkernels *
-    //                   kernel_order * kernel_order *
-    //                   (width + kernel_order - 1) *
-    //                   (height + kernel_order - 1));
-
     double(*const t)[nkernels][width + kernel_order][height + kernel_order] =
         aligned_alloc(64, sizeof(double) * nkernels * (width + kernel_order * 2) * (height + kernel_order * 2));
-
-    // memory is zeroed by default on linux…
-    // int k;
-    // for (k = 0; k < nkernels * width * height; k += 2) {
-    //     _mm_store_si128(&(*t)[0][0][k], _mm_setzero_si128());
-    // }
-    // for (k = k; k < nkernels * width * height; k++) {
-    //     ((double *)&(*t)[0][0][0])[k] = 0.0;
-    // }
 
 #pragma omp parallel for
     for (int m = 0; m < nkernels; m ++) {
@@ -416,23 +387,11 @@ void student_conv(float ***image, int16_t ****kernels, float ***output,
                             sum += df[3];
                         }
 
-                        // (*o)[m][x][y][w][h] = sum;
                         (*t)[m][kernel_order+w-x][kernel_order+h-y] += sum;
                     }
                 }
             }
         }
-
-        // not needed?
-        // for (int x = 0; x < kernel_order; x++) {
-        //     for (int y = 0; y < kernel_order; y++) {
-        //         for (int w = 0; w < width; w++) {
-        //             for (int h = 0; h < height; h++) {
-        //                 // (*t)[m][w][h] += (*o)[m][x][y][w+x][h+y];
-        //             }
-        //         }
-        //     }
-                // }
 
         for (int w = 0; w < width; w++) {
             for (int h = 0; h < height; h++) {
