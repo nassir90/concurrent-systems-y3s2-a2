@@ -347,71 +347,75 @@ void student_conv(float ***image, int16_t ****kernels, float ***output,
     double(*const t)[nkernels][width][height] =
         aligned_alloc(64, sizeof(double) * nkernels * width * height);
 
-#pragma omp parallel for
-    for (int m = 0; m < nkernels; m++) {
-        for (int x = 0; x < kernel_order; x++) {
-            for (int y = 0; y < kernel_order; y++) {
-                for (int c = 0; c < nchannels; c++) {
-                    (*z)[m][x][y][c] = kernels[m][c][x][y];
-                }
-            }
-        }
-    }
+#pragma omp parallel if (kernel_order > 1 || width * height > 128 * 128)
+    {
 
-#pragma omp parallel for
-    for (int m = 0; m < nkernels; m++) {
-        for (int w = 0; w < width + kernel_order - 1; w++) {
+#pragma omp for
+        for (int m = 0; m < nkernels; m++) {
             for (int x = 0; x < kernel_order; x++) {
-                if (w-x < 0 || w-x >= width)
-                    continue;
-                for (int h = 0; h < height + kernel_order - 1; h++) {
-                    for (int y = 0; y < kernel_order; y++) {
-                        if (h-y < 0 || h-y >= height)
-                            continue;
-                        __m128d s2 = _mm_setzero_pd();
-                        for (int c = 0; c < nchannels; c += 8) {
-                            _mm_prefetch(&image[w][h][0], _MM_HINT_T0);
-                            _mm_prefetch(&(*z)[m][x][y][0], _MM_HINT_T0);
-                            
-                            __m128 i4_a = _mm_load_ps(&image[w][h][c]);
-                            __m128 k4_a = _mm_load_ps(&(*z)[m][x][y][c]);
-                            __m128 i4_b = _mm_load_ps(&image[w][h][c+4]);
-                            __m128 k4_b = _mm_load_ps(&(*z)[m][x][y][c+4]);
-                            __m128 p4_a = _mm_mul_ps(i4_a, k4_a);
-                            __m128 p4_b = _mm_mul_ps(i4_b, k4_b);
-                            __m128 p4 = _mm_add_ps(p4_a, p4_b);
-                            __m128d p4_01 = _mm_cvtps_pd(p4);
-                            __m128d p4_23 = _mm_cvtps_pd(_mm_shuffle_ps(p4, p4, _MM_SHUFFLE(3, 2, 3, 2)));
-                            __m128d p4_0123 = _mm_add_pd(p4_01, p4_23);
-                            s2 = _mm_add_pd(s2, p4_0123);
-
-                            i4_a = _mm_load_ps(&image[w][h][c+8]);
-                            k4_a = _mm_load_ps(&(*z)[m][x][y][c+8]);
-                            i4_b = _mm_load_ps(&image[w][h][c+12]);
-                            k4_b = _mm_load_ps(&(*z)[m][x][y][c+12]);
-                            p4_a = _mm_mul_ps(i4_a, k4_a);
-                            p4_b = _mm_mul_ps(i4_b, k4_b);
-                            p4 = _mm_add_ps(p4_a, p4_b);
-                            p4_01 = _mm_cvtps_pd(p4);
-                            p4_23 = _mm_cvtps_pd(_mm_shuffle_ps(p4, p4, _MM_SHUFFLE(3, 2, 3, 2)));
-                            p4_0123 = _mm_add_pd(p4_01, p4_23);
-                            s2 = _mm_add_pd(s2, p4_0123);
-                        }
-                        double sum;
-                        s2 = _mm_hadd_pd(s2, s2);
-                        _mm_store_sd(&sum, s2);
-                        (*t)[m][w-x][h-y] += sum;
+                for (int y = 0; y < kernel_order; y++) {
+                    for (int c = 0; c < nchannels; c++) {
+                        (*z)[m][x][y][c] = kernels[m][c][x][y];
                     }
                 }
             }
         }
-    }
 
-#pragma omp parallel for
-    for (int m = 0; m < nkernels; m++ ) {
-        for (int w = 0; w < width; w++) {
-            for (int h = 0; h < height; h++) {
-                output[m][w][h] = (*t)[m][w][h];
+#pragma omp for
+        for (int m = 0; m < nkernels; m++) {
+            for (int w = 0; w < width + kernel_order - 1; w++) {
+                for (int x = 0; x < kernel_order; x++) {
+                    if (w-x < 0 || w-x >= width)
+                        continue;
+                    for (int h = 0; h < height + kernel_order - 1; h++) {
+                        for (int y = 0; y < kernel_order; y++) {
+                            if (h-y < 0 || h-y >= height)
+                                continue;
+                            __m128d s2 = _mm_setzero_pd();
+                            for (int c = 0; c < nchannels; c += 16) {
+                                _mm_prefetch(&image[w][h][c], _MM_HINT_T0);
+                                _mm_prefetch(&(*z)[m][x][y][c], _MM_HINT_T0);
+                            
+                                __m128 i4_a = _mm_load_ps(&image[w][h][c]);
+                                __m128 k4_a = _mm_load_ps(&(*z)[m][x][y][c]);
+                                __m128 i4_b = _mm_load_ps(&image[w][h][c+4]);
+                                __m128 k4_b = _mm_load_ps(&(*z)[m][x][y][c+4]);
+                                __m128 p4_a = _mm_mul_ps(i4_a, k4_a);
+                                __m128 p4_b = _mm_mul_ps(i4_b, k4_b);
+                                __m128 p4 = _mm_add_ps(p4_a, p4_b);
+                                __m128d p4_01 = _mm_cvtps_pd(p4);
+                                __m128d p4_23 = _mm_cvtps_pd(_mm_shuffle_ps(p4, p4, _MM_SHUFFLE(3, 2, 3, 2)));
+                                __m128d p4_0123 = _mm_add_pd(p4_01, p4_23);
+                                s2 = _mm_add_pd(s2, p4_0123);
+
+                                i4_a = _mm_load_ps(&image[w][h][c+8]);
+                                k4_a = _mm_load_ps(&(*z)[m][x][y][c+8]);
+                                i4_b = _mm_load_ps(&image[w][h][c+12]);
+                                k4_b = _mm_load_ps(&(*z)[m][x][y][c+12]);
+                                p4_a = _mm_mul_ps(i4_a, k4_a);
+                                p4_b = _mm_mul_ps(i4_b, k4_b);
+                                p4 = _mm_add_ps(p4_a, p4_b);
+                                p4_01 = _mm_cvtps_pd(p4);
+                                p4_23 = _mm_cvtps_pd(_mm_shuffle_ps(p4, p4, _MM_SHUFFLE(3, 2, 3, 2)));
+                                p4_0123 = _mm_add_pd(p4_01, p4_23);
+                                s2 = _mm_add_pd(s2, p4_0123);
+                            }
+                            double sum;
+                            s2 = _mm_hadd_pd(s2, s2);
+                            _mm_store_sd(&sum, s2);
+                            (*t)[m][w-x][h-y] += sum;
+                        }
+                    }
+                }
+            }
+        }
+
+#pragma omp for
+        for (int m = 0; m < nkernels; m++ ) {
+            for (int w = 0; w < width; w++) {
+                for (int h = 0; h < height; h++) {
+                    output[m][w][h] = (*t)[m][w][h];
+                }
             }
         }
     }
