@@ -342,9 +342,13 @@ void student_conv(float ***image, int16_t ****kernels, float ***output,
                         * kernel_order
                         * kernel_order
                         * nchannels);
-    
+
+    // exists to accumulate double output
+    double(*const t)[nkernels][width][height] =
+        aligned_alloc(64, sizeof(double) * nkernels * width * height);
+
 #pragma omp parallel for
-    for (int m = 0; m < nkernels; m++ ) {
+    for (int m = 0; m < nkernels; m++) {
         for (int x = 0; x < kernel_order; x++) {
             for (int y = 0; y < kernel_order; y++) {
                 for (int c = 0; c < nchannels; c++) {
@@ -354,23 +358,23 @@ void student_conv(float ***image, int16_t ****kernels, float ***output,
         }
     }
 
-    double(*const t)[nkernels][width + kernel_order][height + kernel_order] =
-        aligned_alloc(64, sizeof(double) * nkernels * (width + kernel_order * 2) * (height + kernel_order * 2));
-
 #pragma omp parallel for
-    for (int m = 0; m < nkernels; m ++) {
-        for (int w = 0; w < width + kernel_order - 1; w ++) {
-            for (int x = 0; x < kernel_order; x ++) {
-                for (int y = 0; y < kernel_order; y ++) {
-                    for (int h = 0; h < height + kernel_order - 1; h ++) {
+    for (int m = 0; m < nkernels; m++) {
+        for (int w = 0; w < width + kernel_order - 1; w++) {
+            for (int x = 0; x < kernel_order; x++) {
+                if (w-x < 0 || w-x >= width)
+                    continue;
+                for (int h = 0; h < height + kernel_order - 1; h++) {
+                    for (int y = 0; y < kernel_order; y++) {
+                        if (h-y < 0 || h-y >= height)
+                            continue;
                         double sum = 0.0;
-
                         _mm_prefetch(&image[w][h][0], _MM_HINT_T0);
                         _mm_prefetch(&(*z)[m][x][y][0], _MM_HINT_T0);
                         for (int c = 0; c < nchannels; c += 8) {
-                            __m128 i4_a = _mm_load_ps(&image[w][h][c]); // LIKE DEATH FOR THE CACHE
+                            __m128 i4_a = _mm_load_ps(&image[w][h][c]);
                             __m128 k4_a = _mm_load_ps(&(*z)[m][x][y][c]);
-                            __m128 i4_b = _mm_load_ps(&image[w][h][c + 4]); // LIKE DEATH FOR THE CACHE
+                            __m128 i4_b = _mm_load_ps(&image[w][h][c + 4]);
                             __m128 k4_b = _mm_load_ps(&(*z)[m][x][y][c + 4]);
                             __m128 p4_a = _mm_mul_ps(i4_a, k4_a);
                             __m128 p4_b = _mm_mul_ps(i4_b, k4_b);
@@ -378,23 +382,24 @@ void student_conv(float ***image, int16_t ****kernels, float ***output,
 
                             float df[4];
                             _mm_store_ps(df, p4);
-                            sum += (double)df[0] + sum + (double)df[1] + (double) df[2] + (double) df[3];
+                            sum += (double)df[0] + (double)df[1] + (double)df[2] + (double) df[3];
                         }
 
-                        (*t)[m][kernel_order+w-x][kernel_order+h-y] += sum;
+                        (*t)[m][w-x][h-y] += sum;
                     }
                 }
             }
         }
+    }
 
+#pragma omp parallel for
+    for (int m = 0; m < nkernels; m++ ) {
         for (int w = 0; w < width; w++) {
             for (int h = 0; h < height; h++) {
-                output[m][w][h] = (*t)[m][kernel_order+w][kernel_order+h];
+                output[m][w][h] = (*t)[m][w][h];
             }
         }
     }
-
-    // printf("output[0][0][0]: %f\n", output[0][0][0]);
 }
 
 int main(int argc, char ** argv)
