@@ -330,10 +330,10 @@ void multichannel_conv(float *** image, int16_t **** kernels,
 void student_conv(float ***image, int16_t ****kernels, float ***output,
                   int width, int height, int nchannels, int nkernels,
                   int kernel_order) {
-    // assert(width >= 16 && width <= 512);
-    // assert(height >= 16 && height <= 512);
-    // assert(nchannels >= 32 && nchannels % 32 == 0 && nkernels <= 2048);
-    // assert(nkernels >= 32 && nkernels % 32 == 0 && nkernels <= 2048);
+    assert(width >= 16 && width <= 512);
+    assert(height >= 16 && height <= 512);
+    assert(nchannels >= 32 && nchannels % 32 == 0 && nkernels <= 2048);
+    assert(nkernels >= 32 && nkernels % 32 == 0 && nkernels <= 2048);
     
     float (*const z)
         [nkernels]
