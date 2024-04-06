@@ -308,9 +308,9 @@ void multichannel_conv(float *** image, int16_t **** kernels,
         for ( w = 0; w < width; w++ ) {
             for ( h = 0; h < height; h++ ) {
                 double sum = 0.0;
-                for ( x = 0; x < kernel_order; x++) {
-                    for ( y = 0; y < kernel_order; y++ ) {
-                        for ( c = 0; c < nchannels; c++ ) {
+                for ( c = 0; c < nchannels; c++ ) {
+                    for ( x = 0; x < kernel_order; x++) {
+                        for ( y = 0; y < kernel_order; y++ ) {
                             sum += image[w+x][h+y][c] * kernels[m][c][x][y];
                         }
                         
@@ -400,6 +400,7 @@ void student_conv(float ***image, int16_t ****kernels, float ***output,
                                 p4_0123 = _mm_add_pd(p4_01, p4_23);
                                 s2 = _mm_add_pd(s2, p4_0123);
                             }
+                            
                             double sum;
                             s2 = _mm_hadd_pd(s2, s2);
                             _mm_store_sd(&sum, s2);
