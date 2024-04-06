@@ -381,10 +381,7 @@ void student_conv(float ***image, int16_t ****kernels, float ***output,
 
                             float df[4];
                             _mm_store_ps(df, p4);
-                            sum += df[0];
-                            sum += df[1];
-                            sum += df[2];
-                            sum += df[3];
+                            sum += (double)df[0] + sum + (double)df[1] + (double) df[2] + (double) df[3];
                         }
 
                         (*t)[m][kernel_order+w-x][kernel_order+h-y] += sum;
