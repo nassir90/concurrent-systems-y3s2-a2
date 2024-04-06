@@ -311,10 +311,7 @@ void multichannel_conv(float *** image, int16_t **** kernels,
                 for ( x = 0; x < kernel_order; x++) {
                     for ( y = 0; y < kernel_order; y++ ) {
                         for ( c = 0; c < nchannels; c++ ) {
-                            float p_ = image[w+x][h+y][c] * kernels[m][c][x][y];
-                            // printf("\tsum ((%dx%d [%d])·(%dx%d)) : %lf [old]\n", w+x, h+y, m, x, y, p_);
-                            // printf("conv (%d, %d): %lf [old]\n", x, y, p_);
-                            sum += p_;
+                            sum += image[w+x][h+y][c] * kernels[m][c][x][y];
                         }
                         
                     }
