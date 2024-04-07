@@ -14,16 +14,17 @@ GetOptions(
            "plot" => \my $plot,
            "build!" => \$build,
            "backend=s" => \$backend,
-           "benchmark" => \my $benchmark
+           "benchmark" => \my $benchmark,
           );
 
 $debug = 1 if $gdb;
 
 if ($build) {
-  my @definitions;
-  push @definitions, "-DPRINT_PLOT_TEXT=" . ($plot ? 1 : 0);
-  push @definitions, "-DCMAKE_BUILD_TYPE=" . ($debug ? "DEBUG" : "RELEASE");
-  
+  my @definitions =
+    (
+     "-DPRINT_PLOT_TEXT=" . ($plot ? 1 : 0),
+     "-DCMAKE_BUILD_TYPE=" . ($debug ? "DEBUG" : "RELEASE")
+    );
   print `cmake -B build @definitions`;
   die "Configure failed" if $?;
   print `cmake --build build`;
@@ -84,14 +85,26 @@ EOF
       exit 1;
     }
   } elsif ($benchmark) {
+    my @results;
     for (0..10) {
       open FH, "./build/concurrent @args|";
       my ($original) = <FH> =~ /(\d+)/;
       my ($student) = <FH> =~ /(\d+)/;
       my $speedup = $original / $student;
-      print "Got: ${speedup}x faster ($original vs $student)\n";
+      push @results, [$original, $student, $speedup];
+      print "Got: ${speedup}x speedup ($original vs $student)\n";
       close FH;
     }
+    my @speedups = map { @$_[2] } @results;
+    local $" = ",";
+    my ($mean, $sd) = split /,/, `Rscript - <<EOF
+speedups_ <- c(@speedups);
+mean_ <- mean(speedups_)
+sd_ <- sd(speedups_);
+message_ <- sprintf("%f,%f", mean_, sd_);
+cat(message_);
+EOF`;
+    print "speedup = N(μ=${mean}, σ=$sd)\n";
     
   } else {
     open FH, "./build/concurrent @args|";
