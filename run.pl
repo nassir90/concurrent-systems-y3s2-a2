@@ -5,6 +5,8 @@ use Getopt::Long;
 my $build = 1;
 # use gnuplot plottting backend by default
 my $backend = "gnuplot";
+# the number of times to benchmark
+my $count = 10;
 
 GetOptions(
            "debug" => \my $debug,
@@ -15,6 +17,8 @@ GetOptions(
            "build!" => \$build,
            "backend=s" => \$backend,
            "benchmark" => \my $benchmark,
+           "count=i" => \$count,
+           "plot-wait" => \my $plotwait
           );
 
 $debug = 1 if $gdb;
@@ -48,7 +52,7 @@ if ($gdb) {
   if ($plot) {
     open FH, "./build/concurrent @args|";
     if ($backend eq "gnuplot") {
-      open GP, "|gnuplot";
+      my $pid = open GP, "|gnuplot";
       print GP <<EOF;
 set style data line
 set autoscale
@@ -69,10 +73,10 @@ EOF
           print GP "@$datum[1] @$datum[2] $_\n";
         }
         print GP "e\n";
-        sleep (0.5);
       }
+      waitpid $pid, 0 if ($plotwait);
     } elsif ($backend eq "python") {
-      open PY, "|python3 plot.py";
+      my $pid = open PY, "|python3 plot.py";
       my $t = 0;
       while (<FH>) {
         next unless /writing to \(\*t\)\[(\d+)\]\[(\d+)\]\[(\d+)\]/;
@@ -80,19 +84,21 @@ EOF
         print PY "$2 $3 $t\n";
         $t++;
       }
+      # waitpid $pid, 0 if ($plotwait);
     } else {
       print ("Unsupported backend plotting backend `$backend`");
       exit 1;
     }
   } elsif ($benchmark) {
     my @results;
-    for (0..10) {
+    for (1..$count) {
       open FH, "./build/concurrent @args|";
       my ($original) = <FH> =~ /(\d+)/;
       my ($student) = <FH> =~ /(\d+)/;
-      my $speedup = $original / $student;
-      push @results, [$original, $student, $speedup];
-      print "Got: ${speedup}x speedup ($original vs $student)\n";
+      my ($speedup) = <FH> =~ /([.0-9]+)/;
+      my ($delta) = <FH> =~ /([.0-9]+)/;
+      push @results, [$original, $student, $speedup, $delta];
+      print "Got: ${speedup}x speedup ($original vs $student) [δ=$delta]\n";
       close FH;
     }
     my @speedups = map { @$_[2] } @results;
