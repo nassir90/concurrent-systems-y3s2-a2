@@ -8,18 +8,19 @@ my $backend = "gnuplot";
 # the number of times to benchmark
 my $count = 10;
 
-GetOptions(
-           "debug" => \my $debug,
-           "size=s" => \my $size,
-           "gdb" => \my $gdb,
-           "args=i{5}" => \my @args,
-           "plot" => \my $plot,
-           "build!" => \$build,
-           "backend=s" => \$backend,
-           "benchmark" => \my $benchmark,
-           "count=i" => \$count,
-           "plot-wait" => \my $plotwait
-          );
+GetOptions
+  (
+   "debug" => \my $debug,
+   "size=s" => \my $size,
+   "gdb" => \my $gdb,
+   "args=i{5}" => \my @args,
+   "plot" => \my $plot,
+   "build!" => \$build,
+   "backend=s" => \$backend,
+   "benchmark" => \my $benchmark,
+   "count=i" => \$count,
+   "plot-wait" => \my $plotwait
+  );
 
 $debug = 1 if $gdb;
 
