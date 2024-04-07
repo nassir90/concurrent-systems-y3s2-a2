@@ -1,0 +1,18 @@
+#+title: Commands
+#+options: toc:nil
+
+* Commands
+
+#+begin_src bash
+perl run.pl --size large --plot --backend=python
+#+end_src
+
+#+attr_org: :width 500
+[[./images/cache locality diagram.png]]
+
+#+begin_src bash
+perl run.pl --size large --plot --backend=gnuplot
+#+end_src
+
+#+attr_org: :width 500
+[[./images/gnuplot cache locality diagram.png]]
