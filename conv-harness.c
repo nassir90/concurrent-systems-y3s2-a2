@@ -1,3 +1,10 @@
+/*
+   Written by
+   Chinaza Uzoukwu
+   Temiloluwa Oyeyemi
+   Yuxin Wan
+*/
+
 /* Test and timing harness program for developing a multichannel
    multikernel convolution (as used in deep learning networks)
 
