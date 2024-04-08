@@ -330,7 +330,7 @@ void multichannel_conv(float *** image, int16_t **** kernels,
 }
 
 /* the fast version of matmul written by the student */
-void student_conv(float ***image, int16_t ****kernels, float ***output,
+void student_conv(float ***image, int16_t ****kernels_, float ***output,
                   int width, int height, int nchannels, int nkernels,
                   int kernel_order) {
     assert(width >= 16 && width <= 512);
@@ -339,9 +339,9 @@ void student_conv(float ***image, int16_t ****kernels, float ***output,
     assert(nkernels >= 32 && nkernels % 32 == 0 && nkernels <= 2048);
     int nthreads = omp_get_max_threads();
     if (kernel_order > 1) {
-        double(*const t)[nthreads][width][height] =
+        double(*const accumulators)[nthreads][width][height] =
             aligned_alloc(64, sizeof(double) * nthreads * width * height);
-        float(*const z)[nkernels][kernel_order][kernel_order][nchannels] =
+        float(*const kernels)[nkernels][kernel_order][kernel_order][nchannels] =
             aligned_alloc(64, sizeof(float) * nkernels * kernel_order * kernel_order * nchannels);
 #pragma omp parallel
         {
@@ -350,7 +350,7 @@ void student_conv(float ***image, int16_t ****kernels, float ***output,
                 for (int x = 0; x < kernel_order; x++) {
                     for (int y = 0; y < kernel_order; y++) {
                         for (int c = 0; c < nchannels; c++) {
-                            (*z)[m][x][y][c] = kernels[m][c][x][y];
+                            (*kernels)[m][x][y][c] = kernels_[m][c][x][y];
                         }
                     }
                 }
@@ -358,8 +358,8 @@ void student_conv(float ***image, int16_t ****kernels, float ***output,
 #pragma omp for 
             for (int m = 0; m < nkernels; m++) {
                 int l = omp_get_thread_num();
-                double(*const a)[width][height] = &(*t)[l];
-                memset(&(*a)[0][0], 0, width * height * 8);
+                double(*const accumulator)[width][height] = &(*accumulators)[l];
+                memset(&(*accumulator)[0][0], 0, width * height * 8);
                 for (int w = 0; w < width + kernel_order - 1; w++) {
                     for (int x = 0; x < kernel_order; x++) {
                         if (w-x < 0 || w-x >= width)
@@ -371,9 +371,9 @@ void student_conv(float ***image, int16_t ****kernels, float ***output,
                                 __m128d s2 = _mm_setzero_pd();
                                 for (int c = 0; c < nchannels; c += 8) {
                                     __m128 i4_a = _mm_load_ps(&image[w][h][c]);
-                                    __m128 k4_a = _mm_load_ps(&(*z)[m][x][y][c]);
+                                    __m128 k4_a = _mm_load_ps(&(*kernels)[m][x][y][c]);
                                     __m128 i4_b = _mm_load_ps(&image[w][h][c+4]);
-                                    __m128 k4_b = _mm_load_ps(&(*z)[m][x][y][c+4]);
+                                    __m128 k4_b = _mm_load_ps(&(*kernels)[m][x][y][c+4]);
                                     __m128 p4_a = _mm_mul_ps(i4_a, k4_a);
                                     __m128 p4_b = _mm_mul_ps(i4_b, k4_b);
                                     __m128 p4 = _mm_add_ps(p4_a, p4_b);
@@ -385,7 +385,7 @@ void student_conv(float ***image, int16_t ****kernels, float ***output,
                                 double sum;
                                 s2 = _mm_hadd_pd(s2, s2);
                                 _mm_store_sd(&sum, s2);
-                                (*a)[w - x][h - y] += sum;
+                                (*accumulator)[w-x][h-y] += sum;
 #ifdef PRINT_PLOT_TEXT
                                 if (m == 0) printf("writing to (*t)[%d][%d][%d]\n", m, w-x, h-y);
 #endif
@@ -395,27 +395,27 @@ void student_conv(float ***image, int16_t ****kernels, float ***output,
                 }
                 for (int w = 0; w < width; w++) {
                     for (int h = 0; h < height; h++) {
-                        output[m][w][h] = (*a)[w][h];
+                        output[m][w][h] = (*accumulator)[w][h];
                     }
                 }
             }
         }
     } else {
-      float(*const z)[nkernels][nchannels] =
-          aligned_alloc(64, sizeof(float) * nkernels * nchannels);
+        float(*const kernels)[nkernels][nchannels] =
+            aligned_alloc(64, sizeof(float) * nkernels * nchannels);
 #pragma omp parallel for
         for (int m = 0; m < nkernels; m++) {
             for (int c = 0; c < nchannels; c++) {
-                (*z)[m][c] = kernels[m][c][0][0];
+                (*kernels)[m][c] = kernels_[m][c][0][0];
             }
             for (int w = 0; w < width; w++) {
                 for (int h = 0; h < height; h++) {
                     __m128d s2 = _mm_setzero_pd();
                     for (int c = 0; c < nchannels; c += 8) {
                         __m128 i4_a = _mm_load_ps(&image[w][h][c]);
-                        __m128 k4_a = _mm_load_ps(&(*z)[m][c]);
+                        __m128 k4_a = _mm_load_ps(&(*kernels)[m][c]);
                         __m128 i4_b = _mm_load_ps(&image[w][h][c+4]);
-                        __m128 k4_b = _mm_load_ps(&(*z)[m][c+4]);
+                        __m128 k4_b = _mm_load_ps(&(*kernels)[m][c+4]);
                         __m128 p4_a = _mm_mul_ps(i4_a, k4_a);
                         __m128 p4_b = _mm_mul_ps(i4_b, k4_b);
                         __m128 p4 = _mm_add_ps(p4_a, p4_b);
