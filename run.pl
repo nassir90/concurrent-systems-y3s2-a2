@@ -19,7 +19,9 @@ my $build = 1;
 my $backend = "gnuplot";
 # the number of times to benchmark
 my $count = 10;
+# whether to run at all
 my $run = 1;
+# whether to run david's code
 my $david = 1;
 
 GetOptions
