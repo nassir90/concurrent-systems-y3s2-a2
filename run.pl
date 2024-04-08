@@ -57,7 +57,7 @@ if ($gdb) {
   if ($plot) {
     open FH, "./build/concurrent @args|";
     if ($backend eq "gnuplot") {
-      my $pid = open GP, "|gnuplot";
+      my $pid = open GP, "|2>/dev/null gnuplot";
       print GP <<EOF;
 set style data line
 set autoscale
