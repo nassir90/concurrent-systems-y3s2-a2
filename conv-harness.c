@@ -182,8 +182,7 @@ int16_t **** gen_random_4d_matrix_int16(int dim0, int dim1, int dim2, int dim3)
 
     /* use the microsecond part of the current time as a pseudorandom seed */
     gettimeofday(&seedtime, NULL);
-    // seed = seedtime.tv_usec;
-    seed = 0;
+    seed = seedtime.tv_usec;
     srandom(seed);
 
     /* fill the matrix with random numbers */
@@ -221,8 +220,7 @@ float **** gen_random_4d_matrix_float(int dim0, int dim1, int dim2, int dim3)
 
     /* use the microsecond part of the current time as a pseudorandom seed */
     gettimeofday(&seedtime, NULL);
-    // seed = seedtime.tv_us;
-    seed = 0;
+    seed = seedtime.tv_usec;
     srandom(seed);
 
     /* fill the matrix with random numbers */
