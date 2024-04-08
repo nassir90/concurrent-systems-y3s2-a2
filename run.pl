@@ -7,6 +7,7 @@ my $build = 1;
 my $backend = "gnuplot";
 # the number of times to benchmark
 my $count = 10;
+my $run = 1;
 
 GetOptions
   (
@@ -19,7 +20,8 @@ GetOptions
    "backend=s" => \$backend,
    "benchmark" => \my $benchmark,
    "count=i" => \$count,
-   "plot-wait" => \my $plotwait
+   "plot-wait" => \my $plotwait,
+   "run!" => \$run
   );
 
 $debug = 1 if $gdb;
@@ -37,6 +39,8 @@ if ($build) {
 } else {
   print "Skipping build (some changes will not take effect)\n";
 }
+
+exit 0 unless $run;
 
 my %sizes = (
           massive => [128, 128, 7, 256, 256],
