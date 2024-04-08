@@ -332,73 +332,101 @@ void student_conv(float ***image, int16_t ****kernels, float ***output,
     assert(height >= 16 && height <= 512);
     assert(nchannels >= 32 && nchannels % 32 == 0 && nkernels <= 2048);
     assert(nkernels >= 32 && nkernels % 32 == 0 && nkernels <= 2048);
-
-    float(*const z)[nkernels][kernel_order][kernel_order][nchannels] =
-        aligned_alloc(64, sizeof(float) * nkernels * kernel_order * kernel_order * nchannels);
-
     int nthreads = omp_get_max_threads();
-    double(*const t)[nthreads][width][height]
-        = aligned_alloc(64, sizeof(double) * nthreads * width * height);
-    
+    if (kernel_order > 1) {
+        double(*const t)[nthreads][width][height] =
+            aligned_alloc(64, sizeof(double) * nthreads * width * height);
+        float(*const z)[nkernels][kernel_order][kernel_order][nchannels] =
+            aligned_alloc(64, sizeof(float) * nkernels * kernel_order * kernel_order * nchannels);
 #pragma omp parallel
-    {
-        
+        {
 #pragma omp for
-        for (int m = 0; m < nkernels; m++) {
-            for (int x = 0; x < kernel_order; x++) {
-                for (int y = 0; y < kernel_order; y++) {
-                    for (int c = 0; c < nchannels; c++) {
-                        (*z)[m][x][y][c] = kernels[m][c][x][y];
-                    }
-                }
-            }
-        }
-        
-#pragma omp for 
-        for (int m = 0; m < nkernels; m++) {
-            int l = omp_get_thread_num();
-            double(*const a)[width][height] = &(*t)[l];
-            memset(&(*a)[0][0], 0, width * height * 8);
-         
-            for (int w = 0; w < width + kernel_order - 1; w++) {
+            for (int m = 0; m < nkernels; m++) {
                 for (int x = 0; x < kernel_order; x++) {
-                    if (w-x < 0 || w-x >= width)
-                        continue;
-                    for (int h = 0; h < height + kernel_order - 1; h++) {
-                        for (int y = 0; y < kernel_order; y++) {
-                            if (h-y < 0 || h-y >= height)
-                                continue;
-                            __m128d s2 = _mm_setzero_pd();
-                            for (int c = 0; c < nchannels; c += 8) {
-                                __m128 i4_a = _mm_load_ps(&image[w][h][c]);
-                                __m128 k4_a = _mm_load_ps(&(*z)[m][x][y][c]);
-                                __m128 i4_b = _mm_load_ps(&image[w][h][c+4]);
-                                __m128 k4_b = _mm_load_ps(&(*z)[m][x][y][c+4]);
-                                __m128 p4_a = _mm_mul_ps(i4_a, k4_a);
-                                __m128 p4_b = _mm_mul_ps(i4_b, k4_b);
-                                __m128 p4 = _mm_add_ps(p4_a, p4_b);
-                                __m128d p4_01 = _mm_cvtps_pd(p4);
-                                __m128d p4_23 = _mm_cvtps_pd(_mm_shuffle_ps(p4, p4, _MM_SHUFFLE(3, 2, 3, 2)));
-                                __m128d p4_0123 = _mm_add_pd(p4_01, p4_23);
-                                s2 = _mm_add_pd(s2, p4_0123);
-                            }
-                            
-                            double sum;
-                            s2 = _mm_hadd_pd(s2, s2);
-                            _mm_store_sd(&sum, s2);
-                            (*a)[w - x][h - y] += sum;
-                            
-#ifdef PRINT_PLOT_TEXT
-                            if (m == 0) printf("writing to (*t)[%d][%d][%d]\n", m, w-x, h-y);
-#endif
+                    for (int y = 0; y < kernel_order; y++) {
+                        for (int c = 0; c < nchannels; c++) {
+                            (*z)[m][x][y][c] = kernels[m][c][x][y];
                         }
                     }
                 }
             }
-            
+#pragma omp for 
+            for (int m = 0; m < nkernels; m++) {
+                int l = omp_get_thread_num();
+                double(*const a)[width][height] = &(*t)[l];
+                memset(&(*a)[0][0], 0, width * height * 8);
+                for (int w = 0; w < width + kernel_order - 1; w++) {
+                    for (int x = 0; x < kernel_order; x++) {
+                        if (w-x < 0 || w-x >= width)
+                            continue;
+                        for (int h = 0; h < height + kernel_order - 1; h++) {
+                            for (int y = 0; y < kernel_order; y++) {
+                                if (h-y < 0 || h-y >= height)
+                                    continue;
+                                __m128d s2 = _mm_setzero_pd();
+                                for (int c = 0; c < nchannels; c += 8) {
+                                    __m128 i4_a = _mm_load_ps(&image[w][h][c]);
+                                    __m128 k4_a = _mm_load_ps(&(*z)[m][x][y][c]);
+                                    __m128 i4_b = _mm_load_ps(&image[w][h][c+4]);
+                                    __m128 k4_b = _mm_load_ps(&(*z)[m][x][y][c+4]);
+                                    __m128 p4_a = _mm_mul_ps(i4_a, k4_a);
+                                    __m128 p4_b = _mm_mul_ps(i4_b, k4_b);
+                                    __m128 p4 = _mm_add_ps(p4_a, p4_b);
+                                    __m128d p4_01 = _mm_cvtps_pd(p4);
+                                    __m128d p4_23 = _mm_cvtps_pd(_mm_shuffle_ps(p4, p4, _MM_SHUFFLE(3, 2, 3, 2)));
+                                    __m128d p4_0123 = _mm_add_pd(p4_01, p4_23);
+                                    s2 = _mm_add_pd(s2, p4_0123);
+                                }
+                                double sum;
+                                s2 = _mm_hadd_pd(s2, s2);
+                                _mm_store_sd(&sum, s2);
+                                (*a)[w - x][h - y] += sum;
+#ifdef PRINT_PLOT_TEXT
+                                if (m == 0) printf("writing to (*t)[%d][%d][%d]\n", m, w-x, h-y);
+#endif
+                            }
+                        }
+                    }
+                }
+                for (int w = 0; w < width; w++) {
+                    for (int h = 0; h < height; h++) {
+                        output[m][w][h] = (*a)[w][h];
+                    }
+                }
+            }
+        }
+    } else {
+      float(*const z)[nkernels][nchannels] =
+          aligned_alloc(64, sizeof(float) * nkernels * nchannels);
+#pragma omp parallel for
+        for (int m = 0; m < nkernels; m++) {
+            for (int c = 0; c < nchannels; c++) {
+                (*z)[m][c] = kernels[m][c][0][0];
+            }
             for (int w = 0; w < width; w++) {
                 for (int h = 0; h < height; h++) {
-                    output[m][w][h] = (*a)[w][h];
+                    __m128d s2 = _mm_setzero_pd();
+                    for (int c = 0; c < nchannels; c += 8) {
+                        __m128 i4_a = _mm_load_ps(&image[w][h][c]);
+                        __m128 k4_a = _mm_load_ps(&(*z)[m][c]);
+                        __m128 i4_b = _mm_load_ps(&image[w][h][c+4]);
+                        __m128 k4_b = _mm_load_ps(&(*z)[m][c+4]);
+                        __m128 p4_a = _mm_mul_ps(i4_a, k4_a);
+                        __m128 p4_b = _mm_mul_ps(i4_b, k4_b);
+                        __m128 p4 = _mm_add_ps(p4_a, p4_b);
+                        __m128d p4_01 = _mm_cvtps_pd(p4);
+                        __m128d p4_23 = _mm_cvtps_pd(_mm_shuffle_ps(p4, p4, _MM_SHUFFLE(3, 2, 3, 2)));
+                        __m128d p4_0123 = _mm_add_pd(p4_01, p4_23);
+                        s2 = _mm_add_pd(s2, p4_0123);
+                    }
+                    double sum;
+                    s2 = _mm_hadd_pd(s2, s2);
+                    _mm_store_sd(&sum, s2);
+                    output[m][w][h] = sum;
+                    
+#ifdef PRINT_PLOT_TEXT
+                    if (m == 0) printf("writing to (*t)[%d][%d][%d]\n", m, w, h);
+#endif
                 }
             }
         }
