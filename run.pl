@@ -126,7 +126,7 @@ EOF
       }
       push @results, [$original, $student, $speedup, $delta];
       if ($david) {
-        print "Got: {speedup: $speedup, original: ${original}µs, student: ${student}µs,  δ: $delta}\n";
+        print "Got: {speedup: $speedup, original: ${original}µs, student: ${student}µs, δ: $delta}\n";
       } else {
         print "Got: {student: ${student}µs}\n";
       }
