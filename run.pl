@@ -2,6 +2,17 @@
 use strict;
 use Getopt::Long;
 
+sub stats {
+  local $" = ",";
+  split /,/, `Rscript - <<EOF
+data_ <- c(@{$_[0]});
+mean_ <- mean(data_)
+sd_ <- sd(data_);
+message_ <- sprintf("%f,%f", mean_, sd_);
+cat(message_);
+EOF`;
+}
+
 # build by default
 my $build = 1;
 # use gnuplot plottting backend by default
@@ -9,6 +20,7 @@ my $backend = "gnuplot";
 # the number of times to benchmark
 my $count = 10;
 my $run = 1;
+my $david = 1;
 
 GetOptions
   (
@@ -22,7 +34,8 @@ GetOptions
    "benchmark" => \my $benchmark,
    "count=i" => \$count,
    "plot-wait" => \my $plotwait,
-   "run!" => \$run
+   "run!" => \$run,
+   "david!" => \$david,
   );
 
 $debug = 1 if $gdb;
@@ -31,7 +44,8 @@ if ($build) {
   my @definitions =
     (
      "-DPRINT_PLOT_TEXT=" . ($plot ? 1 : 0),
-     "-DCMAKE_BUILD_TYPE=" . ($debug ? "DEBUG" : "RELEASE")
+     "-DCMAKE_BUILD_TYPE=" . ($debug ? "DEBUG" : "RELEASE"),
+     "-DNO_DAVID=" . ($david ? 0 : 1)
     );
   print `cmake -B build @definitions`;
   die "Configure failed" if $?;
@@ -101,24 +115,31 @@ EOF
     my @results;
     for (1..$count) {
       open FH, "./build/concurrent @args|";
-      my ($original) = <FH> =~ /(\d+)/;
-      my ($student) = <FH> =~ /(\d+)/;
-      my ($speedup) = <FH> =~ /([.0-9]+)/;
-      my ($delta) = <FH> =~ /([.0-9]+)/;
+      my ($original, $student, $speedup, $delta);
+      while (<FH>) {
+        $original = $1 if /Original.*?(\d+)/;
+        $student  = $1 if /Student.*?(\d+)/;
+        $speedup  = $1 if /Speedup.*?([.0-9]+)/;
+        $delta    = $1 if /COMMENT:.*?([.0-9]+)/;
+      }
       push @results, [$original, $student, $speedup, $delta];
-      print "Got: ${speedup}x speedup ($original vs $student) [δ=$delta]\n";
+      if ($david) {
+        print "Got: {speedup: $speedup, original: ${original}µs, student: ${student}µs,  δ: $delta}\n";
+      } else {
+        print "Got: {student: ${student}µs}\n";
+      }
       close FH;
     }
-    my @speedups = map { @$_[2] } @results;
-    local $" = ",";
-    my ($mean, $sd) = split /,/, `Rscript - <<EOF
-speedups_ <- c(@speedups);
-mean_ <- mean(speedups_)
-sd_ <- sd(speedups_);
-message_ <- sprintf("%f,%f", mean_, sd_);
-cat(message_);
-EOF`;
-    print "speedup = N(μ=${mean}, σ=$sd)\n";
+    
+    if ($david) {
+      my @data = map { @$_[2] } @results;
+      my ($mean, $sd) = stats \@data;
+      print "speedup = N{μ: ${mean}x, σ: $sd}\n";
+    } else {
+      my @data = map { @$_[1] } @results;
+      my ($mean, $sd) = stats \@data;
+      print "student = N{μ: ${mean}μs, σ: $sd}\n";
+    }
     
   } else {
     open FH, "./build/concurrent @args|";

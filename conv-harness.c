@@ -486,8 +486,9 @@ int main(int argc, char ** argv)
     /* use a simple multichannel convolution routine to produce control result */
     /* record starting time of student's code*/
     gettimeofday(&start_time, NULL);
-    multichannel_conv(image, kernels, control_output, width, height, nchannels,
-                      nkernels, kernel_order);
+    #ifndef NO_DAVID
+    multichannel_conv(image, kernels, control_output, width, height, nchannels, nkernels, kernel_order);
+    #endif
     gettimeofday(&stop_time, NULL);
     mul_time = (stop_time.tv_sec - start_time.tv_sec) * 1000000L +
         (stop_time.tv_usec - start_time.tv_usec);
@@ -514,9 +515,11 @@ int main(int argc, char ** argv)
 
     DEBUGGING(write_out(output, nkernels, width, height));
 
+    #ifndef NO_DAVID
     /* now check that the student's multichannel convolution routine
        gives the same answer as the known working version */
     check_result(output, control_output, nkernels, width, height);
+    #endif
 
     return 0;
 }

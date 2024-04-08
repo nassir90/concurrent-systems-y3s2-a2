@@ -9,6 +9,8 @@ run perl run.pl --size smallest --args 16 16 3 32 32
 run perl run.pl --size smallest --debug
 run perl run.pl --size smallest --nobuild
 run perl run.pl --size smallest
+run perl run.pl --size smallest --nodavid
+run perl run.pl --size smallest --nodavid --benchmark --count 5
 run perl run.pl --size smallest --benchmark
 run perl run.pl --size smallest --benchmark --count 10
 run perl run.pl --size smallest --plot --backend python
