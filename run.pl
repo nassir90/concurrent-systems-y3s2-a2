@@ -43,12 +43,14 @@ if ($build) {
 
 exit 0 unless $run;
 
-my %sizes = (
-          massive => [128, 128, 7, 256, 256],
-          large => [128, 128, 7, 64, 64],
-          normal => [128, 128, 7, 32, 32],
-          smallest => [16, 16, 3, 32, 32]
-         );
+my %sizes =
+  (
+   massive => [128, 128, 7, 256, 256],
+   large => [128, 128, 7, 64, 64],
+   normal => [128, 128, 7, 32, 32],
+   smallest => [16, 16, 3, 32, 32],
+   atom => [16, 16, 1, 32, 32]
+  );
 
 @args = @{$sizes{$size}} if ($sizes{$size});
 
