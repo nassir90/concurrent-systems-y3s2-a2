@@ -343,9 +343,9 @@ void student_conv(float ***image, int16_t ****kernels_, float ***output,
             aligned_alloc(64, sizeof(double) * nthreads * width * height);
         float(*const kernels)[nkernels][kernel_order][kernel_order][nchannels] =
             aligned_alloc(64, sizeof(float) * nkernels * kernel_order * kernel_order * nchannels);
-#pragma omp parallel
+        #pragma omp parallel
         {
-#pragma omp for
+            #pragma omp for
             for (int m = 0; m < nkernels; m++) {
                 for (int x = 0; x < kernel_order; x++) {
                     for (int y = 0; y < kernel_order; y++) {
@@ -355,7 +355,7 @@ void student_conv(float ***image, int16_t ****kernels_, float ***output,
                     }
                 }
             }
-#pragma omp for 
+            #pragma omp for 
             for (int m = 0; m < nkernels; m++) {
                 int l = omp_get_thread_num();
                 double(*const accumulator)[width][height] = &(*accumulators)[l];
@@ -382,13 +382,10 @@ void student_conv(float ***image, int16_t ****kernels_, float ***output,
                                     __m128d p4_0123 = _mm_add_pd(p4_01, p4_23);
                                     s2 = _mm_add_pd(s2, p4_0123);
                                 }
-                                double sum;
-                                s2 = _mm_hadd_pd(s2, s2);
-                                _mm_store_sd(&sum, s2);
-                                (*accumulator)[w-x][h-y] += sum;
-#ifdef PRINT_PLOT_TEXT
+                                (*accumulator)[w-x][h-y] += _mm_hadd_pd(s2, s2)[0];
+                                #ifdef PRINT_PLOT_TEXT
                                 if (m == 0) printf("writing to (*t)[%d][%d][%d]\n", m, w-x, h-y);
-#endif
+                                #endif
                             }
                         }
                     }
@@ -403,7 +400,7 @@ void student_conv(float ***image, int16_t ****kernels_, float ***output,
     } else {
         float(*const kernels)[nkernels][nchannels] =
             aligned_alloc(64, sizeof(float) * nkernels * nchannels);
-#pragma omp parallel for
+        #pragma omp parallel for
         for (int m = 0; m < nkernels; m++) {
             for (int c = 0; c < nchannels; c++) {
                 (*kernels)[m][c] = kernels_[m][c][0][0];
@@ -424,14 +421,11 @@ void student_conv(float ***image, int16_t ****kernels_, float ***output,
                         __m128d p4_0123 = _mm_add_pd(p4_01, p4_23);
                         s2 = _mm_add_pd(s2, p4_0123);
                     }
-                    double sum;
-                    s2 = _mm_hadd_pd(s2, s2);
-                    _mm_store_sd(&sum, s2);
-                    output[m][w][h] = sum;
+                    output[m][w][h] = _mm_hadd_pd(s2, s2)[0];
                     
-#ifdef PRINT_PLOT_TEXT
+                    #ifdef PRINT_PLOT_TEXT
                     if (m == 0) printf("writing to (*t)[%d][%d][%d]\n", m, w, h);
-#endif
+                    #endif
                 }
             }
         }
