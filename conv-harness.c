@@ -20,20 +20,20 @@
    Version 1.6 : Modified the code so that the input tensor is float
 
    Version 1.5 : Modified the code so that the input and kernel
-   are tensors of 16-bit integer values
+                 are tensors of 16-bit integer values
 
    Version 1.4 : Modified the random generator to reduce the range
-   of generated values;
+                 of generated values;
 
    Version 1.3 : Fixed which loop variables were being incremented
-   in write_out();
-   Fixed dimensions of output and control_output 
-   matrices in main function
+                 in write_out();
+                 Fixed dimensions of output and control_output 
+                 matrices in main function
 
    Version 1.2 : Changed distribution of test data to (hopefully) 
-   eliminate random walk of floating point error;
-   Also introduced checks to restrict kernel-order to
-   a small set of values
+                 eliminate random walk of floating point error;
+                 Also introduced checks to restrict kernel-order to
+                 a small set of values
 
    Version 1.1 : Fixed bug in code to create 4d matrix
 */
@@ -319,14 +319,12 @@ void multichannel_conv(float *** image, int16_t **** kernels,
                         for ( y = 0; y < kernel_order; y++ ) {
                             sum += image[w+x][h+y][c] * kernels[m][c][x][y];
                         }
-                        
                     }
                     output[m][w][h] = (float) sum;
                 }
             }
         }
     }
-    // printf("output[0][0][0]: %f [old]\n", output[0][0][0]);
 }
 
 /* the fast version of matmul written by the student */
@@ -337,96 +335,38 @@ void student_conv(float ***image, int16_t ****kernels_, float ***output,
     assert(height >= 16 && height <= 512);
     assert(nchannels >= 32 && nchannels % 32 == 0 && nkernels <= 2048);
     assert(nkernels >= 32 && nkernels % 32 == 0 && nkernels <= 2048);
-    int nthreads = omp_get_max_threads();
-    if (kernel_order > 1) {
-        double(*const accumulators)[nthreads][width][height] =
-            aligned_alloc(64, sizeof(double) * nthreads * width * height);
-        float(*const kernels)[nkernels][kernel_order][kernel_order][nchannels] =
-            aligned_alloc(64, sizeof(float) * nkernels * kernel_order * kernel_order * nchannels);
-        #pragma omp parallel
-        {
-            #pragma omp for
-            for (int m = 0; m < nkernels; m++) {
+    float(*const kernels)[nkernels][kernel_order][kernel_order][nchannels] =
+        aligned_alloc(64, sizeof(float) * nkernels * kernel_order * kernel_order * nchannels);
+    #pragma omp parallel for
+    for (int m = 0; m < nkernels; m++) {
+        for (int c = 0; c < nchannels; c++)
+            for (int x = 0; x < kernel_order; x++)
+                for (int y = 0; y < kernel_order; y++)
+                    (*kernels)[m][x][y][c] = kernels_[m][c][x][y];
+        for (int w = 0; w < width; w++) {
+            for (int h = 0; h < height; h++) {
+                __m128d s2 = _mm_setzero_pd();
                 for (int x = 0; x < kernel_order; x++) {
                     for (int y = 0; y < kernel_order; y++) {
-                        for (int c = 0; c < nchannels; c++) {
-                            (*kernels)[m][x][y][c] = kernels_[m][c][x][y];
+                        for (int c = 0; c < nchannels; c += 8) {
+                            __m128 i4_a = _mm_load_ps(&image[w+x][h+y][c]);
+                            __m128 k4_a = _mm_load_ps(&(*kernels)[m][x][y][c]);
+                            __m128 i4_b = _mm_load_ps(&image[w+x][h+y][c+4]);
+                            __m128 k4_b = _mm_load_ps(&(*kernels)[m][x][y][c+4]);
+                            __m128 p4_a = _mm_mul_ps(i4_a, k4_a);
+                            __m128 p4_b = _mm_mul_ps(i4_b, k4_b);
+                            __m128 p4 = _mm_add_ps(p4_a, p4_b);
+                            __m128d p4_01 = _mm_cvtps_pd(p4);
+                            __m128d p4_23 = _mm_cvtps_pd(_mm_shuffle_ps(p4, p4, _MM_SHUFFLE(3, 2, 3, 2)));
+                            __m128d p4_0123 = _mm_add_pd(p4_01, p4_23);
+                            s2 = _mm_add_pd(s2, p4_0123);
                         }
                     }
                 }
-            }
-            #pragma omp for 
-            for (int m = 0; m < nkernels; m++) {
-                int l = omp_get_thread_num();
-                double(*const accumulator)[width][height] = &(*accumulators)[l];
-                memset(&(*accumulator)[0][0], 0, width * height * 8);
-                for (int w = 0; w < width + kernel_order - 1; w++) {
-                    for (int x = 0; x < kernel_order; x++) {
-                        if (w-x < 0 || w-x >= width)
-                            continue;
-                        for (int h = 0; h < height + kernel_order - 1; h++) {
-                            for (int y = 0; y < kernel_order; y++) {
-                                if (h-y < 0 || h-y >= height)
-                                    continue;
-                                __m128d s2 = _mm_setzero_pd();
-                                for (int c = 0; c < nchannels; c += 8) {
-                                    __m128 i4_a = _mm_load_ps(&image[w][h][c]);
-                                    __m128 k4_a = _mm_load_ps(&(*kernels)[m][x][y][c]);
-                                    __m128 i4_b = _mm_load_ps(&image[w][h][c+4]);
-                                    __m128 k4_b = _mm_load_ps(&(*kernels)[m][x][y][c+4]);
-                                    __m128 p4_a = _mm_mul_ps(i4_a, k4_a);
-                                    __m128 p4_b = _mm_mul_ps(i4_b, k4_b);
-                                    __m128 p4 = _mm_add_ps(p4_a, p4_b);
-                                    __m128d p4_01 = _mm_cvtps_pd(p4);
-                                    __m128d p4_23 = _mm_cvtps_pd(_mm_shuffle_ps(p4, p4, _MM_SHUFFLE(3, 2, 3, 2)));
-                                    __m128d p4_0123 = _mm_add_pd(p4_01, p4_23);
-                                    s2 = _mm_add_pd(s2, p4_0123);
-                                }
-                                (*accumulator)[w-x][h-y] += _mm_hadd_pd(s2, s2)[0];
-                                #ifdef PRINT_PLOT_TEXT
-                                if (m == 0) printf("writing to (*t)[%d][%d][%d]\n", m, w-x, h-y);
-                                #endif
-                            }
-                        }
-                    }
-                }
-                for (int w = 0; w < width; w++) {
-                    for (int h = 0; h < height; h++) {
-                        output[m][w][h] = (*accumulator)[w][h];
-                    }
-                }
-            }
-        }
-    } else {
-        float(*const kernels)[nkernels][nchannels] =
-            aligned_alloc(64, sizeof(float) * nkernels * nchannels);
-        #pragma omp parallel for
-        for (int m = 0; m < nkernels; m++) {
-            for (int c = 0; c < nchannels; c++) {
-                (*kernels)[m][c] = kernels_[m][c][0][0];
-            }
-            for (int w = 0; w < width; w++) {
-                for (int h = 0; h < height; h++) {
-                    __m128d s2 = _mm_setzero_pd();
-                    for (int c = 0; c < nchannels; c += 8) {
-                        __m128 i4_a = _mm_load_ps(&image[w][h][c]);
-                        __m128 k4_a = _mm_load_ps(&(*kernels)[m][c]);
-                        __m128 i4_b = _mm_load_ps(&image[w][h][c+4]);
-                        __m128 k4_b = _mm_load_ps(&(*kernels)[m][c+4]);
-                        __m128 p4_a = _mm_mul_ps(i4_a, k4_a);
-                        __m128 p4_b = _mm_mul_ps(i4_b, k4_b);
-                        __m128 p4 = _mm_add_ps(p4_a, p4_b);
-                        __m128d p4_01 = _mm_cvtps_pd(p4);
-                        __m128d p4_23 = _mm_cvtps_pd(_mm_shuffle_ps(p4, p4, _MM_SHUFFLE(3, 2, 3, 2)));
-                        __m128d p4_0123 = _mm_add_pd(p4_01, p4_23);
-                        s2 = _mm_add_pd(s2, p4_0123);
-                    }
-                    output[m][w][h] = _mm_hadd_pd(s2, s2)[0];
-                    
-                    #ifdef PRINT_PLOT_TEXT
-                    if (m == 0) printf("writing to (*t)[%d][%d][%d]\n", m, w, h);
-                    #endif
-                }
+                output[m][w][h] = _mm_hadd_pd(s2, s2)[0];
+                #ifdef PRINT_PLOT_TEXT
+                if (m == 0) printf("writing to (*t)[%d][%d][%d]\n", m, w, h);
+                #endif
             }
         }
     }
