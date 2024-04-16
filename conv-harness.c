@@ -1,3 +1,10 @@
+/*
+   Written by
+   Chinaza Uzoukwu
+   Temiloluwa Oyeyemi
+   Yuxin Wan
+*/
+
 /* Test and timing harness program for developing a multichannel
    multikernel convolution (as used in deep learning networks)
 
@@ -31,6 +38,8 @@
    Version 1.1 : Fixed bug in code to create 4d matrix
 */
 
+#include <pmmintrin.h>
+#include <stdalign.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/time.h>
@@ -38,6 +47,9 @@
 #include <omp.h>
 #include <math.h>
 #include <stdint.h>
+#include <immintrin.h>
+#include <xmmintrin.h>
+#include <string.h>
 
 /* the following two definitions of DEBUGGING control whether or not
    debugging information is written out. To put the program into
@@ -50,245 +62,245 @@
 /* write 3d matrix to stdout */
 void write_out(int16_t *** a, int dim0, int dim1, int dim2)
 {
-  int i, j, k;
+    int i, j, k;
 
-  for ( i = 0; i < dim0; i++ ) {
-    printf("Outer dimension number %d\n", i);
-    for ( j = 0; j < dim1; j++ ) {
-      for ( k = 0; k < dim2 - 1; k++ ) {
-        printf("%d, ", a[i][j][k]);
-      }
-      // print end of line
-      printf("%f\n", a[i][j][dim2-1]);
+    for ( i = 0; i < dim0; i++ ) {
+        printf("Outer dimension number %d\n", i);
+        for ( j = 0; j < dim1; j++ ) {
+            for ( k = 0; k < dim2 - 1; k++ ) {
+                printf("%d, ", a[i][j][k]);
+            }
+            // print end of line
+            printf("%f\n", a[i][j][dim2-1]);
+        }
     }
-  }
 }
 
 
 /* create new empty 4d float matrix */
 float **** new_empty_4d_matrix_float(int dim0, int dim1, int dim2, int dim3)
 {
-  float **** result = malloc(dim0 * sizeof(float***));
-  float *** mat1 = malloc(dim0 * dim1 * sizeof(float**));
-  float ** mat2 = malloc(dim0 * dim1 * dim2 * sizeof(float*));
-  float * mat3 = malloc(dim0 * dim1 * dim2 *dim3 * sizeof(float));
-  int i, j, k;
+    float **** result = malloc(dim0 * sizeof(float***));
+    float *** mat1 = malloc(dim0 * dim1 * sizeof(float**));
+    float ** mat2 = malloc(dim0 * dim1 * dim2 * sizeof(float*));
+    float * mat3 = malloc(dim0 * dim1 * dim2 *dim3 * sizeof(float));
+    int i, j, k;
 
   
-  for ( i = 0; i < dim0; i++ ) {
-    result[i] = &(mat1[i*dim1]);
-    for ( j = 0; j < dim1; j++ ) {
-      result[i][j] = &(mat2[i*dim1*dim2 + j*dim2]);
-      for ( k = 0; k < dim2; k++ ) {
-        result[i][j][k] = &(mat3[i*dim1*dim2*dim3+j*dim2*dim3+k*dim3]);
-      }
+    for ( i = 0; i < dim0; i++ ) {
+        result[i] = &(mat1[i*dim1]);
+        for ( j = 0; j < dim1; j++ ) {
+            result[i][j] = &(mat2[i*dim1*dim2 + j*dim2]);
+            for ( k = 0; k < dim2; k++ ) {
+                result[i][j][k] = &(mat3[i*dim1*dim2*dim3+j*dim2*dim3+k*dim3]);
+            }
+        }
     }
-  }
 
-  return result;
+    return result;
 }
 
 /* create new empty 3d matrix */
 float *** new_empty_3d_matrix_float(int dim0, int dim1, int dim2)
 {
-  float **** mat4d;
-  float *** mat3d;
+    float **** mat4d;
+    float *** mat3d;
 
-  // create a 4d matrix with single first dimension
-  mat4d = new_empty_4d_matrix_float(1, dim0, dim1, dim2);
-  // now throw away out first dimension
-  mat3d = mat4d[0];
-  free(mat4d);
-  return mat3d;
+    // create a 4d matrix with single first dimension
+    mat4d = new_empty_4d_matrix_float(1, dim0, dim1, dim2);
+    // now throw away out first dimension
+    mat3d = mat4d[0];
+    free(mat4d);
+    return mat3d;
 }
 
 /* create new empty 4d int16_t matrix */
 int16_t **** new_empty_4d_matrix_int16(int dim0, int dim1, int dim2, int dim3)
 {
-  int16_t **** result = malloc(dim0 * sizeof(int16_t***));
-  int16_t *** mat1 = malloc(dim0 * dim1 * sizeof(int16_t**));
-  int16_t ** mat2 = malloc(dim0 * dim1 * dim2 * sizeof(int16_t*));
-  int16_t * mat3 = malloc(dim0 * dim1 * dim2 *dim3 * sizeof(int16_t));
-  int i, j, k;
+    int16_t **** result = malloc(dim0 * sizeof(int16_t***));
+    int16_t *** mat1 = malloc(dim0 * dim1 * sizeof(int16_t**));
+    int16_t ** mat2 = malloc(dim0 * dim1 * dim2 * sizeof(int16_t*));
+    int16_t * mat3 = malloc(dim0 * dim1 * dim2 *dim3 * sizeof(int16_t));
+    int i, j, k;
 
   
-  for ( i = 0; i < dim0; i++ ) {
-    result[i] = &(mat1[i*dim1]);
-    for ( j = 0; j < dim1; j++ ) {
-      result[i][j] = &(mat2[i*dim1*dim2 + j*dim2]);
-      for ( k = 0; k < dim2; k++ ) {
-        result[i][j][k] = &(mat3[i*dim1*dim2*dim3+j*dim2*dim3+k*dim3]);
-      }
+    for ( i = 0; i < dim0; i++ ) {
+        result[i] = &(mat1[i*dim1]);
+        for ( j = 0; j < dim1; j++ ) {
+            result[i][j] = &(mat2[i*dim1*dim2 + j*dim2]);
+            for ( k = 0; k < dim2; k++ ) {
+                result[i][j][k] = &(mat3[i*dim1*dim2*dim3+j*dim2*dim3+k*dim3]);
+            }
+        }
     }
-  }
 
-  return result;
+    return result;
 }
 
 /* create new empty 3d matrix */
 int16_t *** new_empty_3d_matrix_int16(int dim0, int dim1, int dim2)
 {
-  int16_t **** mat4d;
-  int16_t *** mat3d;
+    int16_t **** mat4d;
+    int16_t *** mat3d;
 
-  // create a 4d matrix with single first dimension
-  mat4d = new_empty_4d_matrix_int16(1, dim0, dim1, dim2);
-  // now throw away out first dimension
-  mat3d = mat4d[0];
-  free(mat4d);
-  return mat3d;
+    // create a 4d matrix with single first dimension
+    mat4d = new_empty_4d_matrix_int16(1, dim0, dim1, dim2);
+    // now throw away out first dimension
+    mat3d = mat4d[0];
+    free(mat4d);
+    return mat3d;
 }
 
 /* take a copy of the matrix and return in a newly allocated matrix */
 int16_t **** copy_4d_matrix(int16_t **** source_matrix, int dim0,
                             int dim1, int dim2, int dim3)
 {
-  int i, j, k, l;
-  int16_t **** result = new_empty_4d_matrix_int16(dim0, dim1, dim2, dim3);
+    int i, j, k, l;
+    int16_t **** result = new_empty_4d_matrix_int16(dim0, dim1, dim2, dim3);
 
-  for ( i = 0; i < dim0; i++ ) {
-    for ( j = 0; j < dim1; j++ ) {
-      for ( k = 0; k < dim2; k++ ) {
-        for ( l = 0; l < dim3; l++ ) {
-          result[i][j][k][l] = source_matrix[i][j][k][l];
+    for ( i = 0; i < dim0; i++ ) {
+        for ( j = 0; j < dim1; j++ ) {
+            for ( k = 0; k < dim2; k++ ) {
+                for ( l = 0; l < dim3; l++ ) {
+                    result[i][j][k][l] = source_matrix[i][j][k][l];
+                }
+            }
         }
-      }
     }
-  }
-  return result;
+    return result;
 }
 
 /* create a matrix and fill it with random numbers */
 int16_t **** gen_random_4d_matrix_int16(int dim0, int dim1, int dim2, int dim3)
 {
-int16_t **** result;
-int i, j, k, l;
-struct timeval seedtime;
-  int seed;
+    int16_t **** result;
+    int i, j, k, l;
+    struct timeval seedtime;
+    int seed;
 
-  result = new_empty_4d_matrix_int16(dim0, dim1, dim2, dim3);
+    result = new_empty_4d_matrix_int16(dim0, dim1, dim2, dim3);
 
-  /* use the microsecond part of the current time as a pseudorandom seed */
-  gettimeofday(&seedtime, NULL);
-  seed = seedtime.tv_usec;
-  srandom(seed);
+    /* use the microsecond part of the current time as a pseudorandom seed */
+    gettimeofday(&seedtime, NULL);
+    seed = seedtime.tv_usec;
+    srandom(seed);
 
-  /* fill the matrix with random numbers */
-  const int range = 1 << 10; // 2^10
-  //const int bias = 1 << 16; // 2^16
-  int16_t offset = 0.0;
-  for ( i = 0; i < dim0; i++ ) {
-    for ( j = 0; j < dim1; j++ ) {
-      for ( k = 0; k < dim2; k++ ) {
-        for ( l = 0; l < dim3; l++ ) {
-          // generate uniform random integer with mean of zero
-          long long rand = random();
-          // now cut down the range and bias the mean to reduce
-          // the likelihood of large floating point round-off errors
-          int reduced_range = (rand % range);
-          result[i][j][k][l] = reduced_range;
+    /* fill the matrix with random numbers */
+    const int range = 1 << 10; // 2^10
+    //const int bias = 1 << 16; // 2^16
+    int16_t offset = 0.0;
+    for ( i = 0; i < dim0; i++ ) {
+        for ( j = 0; j < dim1; j++ ) {
+            for ( k = 0; k < dim2; k++ ) {
+                for ( l = 0; l < dim3; l++ ) {
+                    // generate uniform random integer with mean of zero
+                    long long rand = random();
+                    // now cut down the range and bias the mean to reduce
+                    // the likelihood of large floating point round-off errors
+                    int reduced_range = (rand % range);
+                    result[i][j][k][l] = reduced_range;
+                }
+            }
         }
-      }
     }
-  }
 
-  return result;
+    return result;
 }
 
 
 /* create a matrix and fill it with random numbers */
 float **** gen_random_4d_matrix_float(int dim0, int dim1, int dim2, int dim3)
 {
-float **** result;
-int i, j, k, l;
-struct timeval seedtime;
-  int seed;
+    float **** result;
+    int i, j, k, l;
+    struct timeval seedtime;
+    int seed;
 
-  result = new_empty_4d_matrix_float(dim0, dim1, dim2, dim3);
+    result = new_empty_4d_matrix_float(dim0, dim1, dim2, dim3);
 
-  /* use the microsecond part of the current time as a pseudorandom seed */
-  gettimeofday(&seedtime, NULL);
-  seed = seedtime.tv_usec;
-  srandom(seed);
+    /* use the microsecond part of the current time as a pseudorandom seed */
+    gettimeofday(&seedtime, NULL);
+    seed = seedtime.tv_usec;
+    srandom(seed);
 
-  /* fill the matrix with random numbers */
-  const int range = 1 << 12; // 2^12
-  const int bias = 1 << 10; // 2^16
-  int16_t offset = 0.0;
-  for ( i = 0; i < dim0; i++ ) {
-    for ( j = 0; j < dim1; j++ ) {
-      for ( k = 0; k < dim2; k++ ) {
-        for ( l = 0; l < dim3; l++ ) {
-          // generate uniform random integer with mean of zero
-          long long rand = random();
-          // now cut down the range and bias the mean to reduce
-          // the likelihood of large floating point round-off errors
-          int reduced_range = (rand % range);
-          result[i][j][k][l] = reduced_range + bias;
+    /* fill the matrix with random numbers */
+    const int range = 1 << 12; // 2^12
+    const int bias = 1 << 10; // 2^16
+    int16_t offset = 0.0;
+    for ( i = 0; i < dim0; i++ ) {
+        for ( j = 0; j < dim1; j++ ) {
+            for ( k = 0; k < dim2; k++ ) {
+                for ( l = 0; l < dim3; l++ ) {
+                    // generate uniform random integer with mean of zero
+                    long long rand = random();
+                    // now cut down the range and bias the mean to reduce
+                    // the likelihood of large floating point round-off errors
+                    int reduced_range = (rand % range);
+                    result[i][j][k][l] = reduced_range + bias;
+                }
+            }
         }
-      }
     }
-  }
 
-  return result;
+    return result;
 }
 
 
 /* create a matrix and fill it with random numbers */
 float *** gen_random_3d_matrix_float(int dim0, int dim1, int dim2)
 {
-  float **** mat4d;
-  float *** mat3d;
+    float **** mat4d;
+    float *** mat3d;
 
-  // create a 4d matrix with single first dimension
-  mat4d = gen_random_4d_matrix_float(1, dim0, dim1, dim2);
-  // now throw away out first dimension
-  mat3d = mat4d[0];
-  free(mat4d);
-  return mat3d;
+    // create a 4d matrix with single first dimension
+    mat4d = gen_random_4d_matrix_float(1, dim0, dim1, dim2);
+    // now throw away out first dimension
+    mat3d = mat4d[0];
+    free(mat4d);
+    return mat3d;
 }
 
 /* create a matrix and fill it with random numbers */
 int16_t *** gen_random_3d_matrix_int16(int dim0, int dim1, int dim2)
 {
-  int16_t **** mat4d;
-  int16_t *** mat3d;
+    int16_t **** mat4d;
+    int16_t *** mat3d;
 
-  // create a 4d matrix with single first dimension
-  mat4d = gen_random_4d_matrix_int16(1, dim0, dim1, dim2);
-  // now throw away out first dimension
-  mat3d = mat4d[0];
-  free(mat4d);
-  return mat3d;
+    // create a 4d matrix with single first dimension
+    mat4d = gen_random_4d_matrix_int16(1, dim0, dim1, dim2);
+    // now throw away out first dimension
+    mat3d = mat4d[0];
+    free(mat4d);
+    return mat3d;
 }
 
 /* check the sum of absolute differences is within reasonable epsilon */
 void check_result(float *** result, float *** control,
                   int dim0, int dim1, int dim2)
 {
-  int i, j, k;
-  double sum_abs_diff = 0.0;
-  const double EPSILON = 0.0625;
+    int i, j, k;
+    double sum_abs_diff = 0.0;
+    const double EPSILON = 0.0625;
 
-  //printf("SAD\n");
+    //printf("SAD\n");
   
-  for ( i = 0; i < dim0; i++ ) {
-    for ( j = 0; j < dim1; j++ ) {
-      for ( k = 0; k < dim2; k++ ) {
-        double diff = fabs(control[i][j][k] - result[i][j][k]);
-        assert( diff >= 0.0 );
-        sum_abs_diff = sum_abs_diff + diff;
-      }
+    for ( i = 0; i < dim0; i++ ) {
+        for ( j = 0; j < dim1; j++ ) {
+            for ( k = 0; k < dim2; k++ ) {
+                double diff = fabs(control[i][j][k] - result[i][j][k]);
+                assert( diff >= 0.0 );
+                sum_abs_diff = sum_abs_diff + diff;
+            }
+        }
     }
-  }
 
-  if ( sum_abs_diff > EPSILON ) {
-    fprintf(stderr, "WARNING: sum of absolute differences (%f) > EPSILON (%f)\n",
-            sum_abs_diff, EPSILON);
-  }
-  else {
-    printf("COMMENT: sum of absolute differences (%f)  within acceptable range (%f)\n", sum_abs_diff, EPSILON);
-  }
+    if ( sum_abs_diff > EPSILON ) {
+        fprintf(stderr, "WARNING: sum of absolute differences (%f) > EPSILON (%f)\n",
+                sum_abs_diff, EPSILON);
+    }
+    else {
+        printf("COMMENT: sum of absolute differences (%f)  within acceptable range (%f)\n", sum_abs_diff, EPSILON);
+    }
 }
 
 /* the slow but correct version of matmul written by David */
@@ -296,103 +308,152 @@ void multichannel_conv(float *** image, int16_t **** kernels,
 		       float *** output, int width, int height,
 		       int nchannels, int nkernels, int kernel_order)
 {
-  int h, w, x, y, c, m;
+    int h, w, x, y, c, m;
 
-  for ( m = 0; m < nkernels; m++ ) {
-    for ( w = 0; w < width; w++ ) {
-      for ( h = 0; h < height; h++ ) {
-        double sum = 0.0;
-        for ( c = 0; c < nchannels; c++ ) {
-          for ( x = 0; x < kernel_order; x++) {
-            for ( y = 0; y < kernel_order; y++ ) {
-              sum += image[w+x][h+y][c] * kernels[m][c][x][y];
+    for ( m = 0; m < nkernels; m++ ) {
+        for ( w = 0; w < width; w++ ) {
+            for ( h = 0; h < height; h++ ) {
+                double sum = 0.0;
+                for ( c = 0; c < nchannels; c++ ) {
+                    for ( x = 0; x < kernel_order; x++) {
+                        for ( y = 0; y < kernel_order; y++ ) {
+                            sum += image[w+x][h+y][c] * kernels[m][c][x][y];
+                        }
+                    }
+                    output[m][w][h] = (float) sum;
+                }
             }
-          }
-          output[m][w][h] = (float) sum;
         }
-      }
     }
-  }
 }
 
 /* the fast version of matmul written by the student */
-void student_conv(float *** image, int16_t **** kernels, float *** output,
-               int width, int height, int nchannels, int nkernels,
-               int kernel_order)
-{
-  // this call here is just dummy code that calls the slow, simple, correct version.
-  // insert your own code instead
-  multichannel_conv(image, kernels, output, width,
-                    height, nchannels, nkernels, kernel_order);
+void student_conv(float ***image, int16_t ****kernels_, float ***output,
+                  int width, int height, int nchannels, int nkernels,
+                  int kernel_order) {
+    assert(width >= 16 && width <= 512);
+    assert(height >= 16 && height <= 512);
+    assert(nchannels >= 32 && nchannels % 32 == 0 && nkernels <= 2048);
+    assert(nkernels >= 32 && nkernels % 32 == 0 && nkernels <= 2048);
+    float(*const kernels)[nkernels][kernel_order][kernel_order][nchannels] =
+        aligned_alloc(64, sizeof(float) * nkernels * kernel_order * kernel_order * nchannels);
+    #pragma omp parallel for
+    for (int m = 0; m < nkernels; m++) {
+        for (int c = 0; c < nchannels; c++)
+            for (int x = 0; x < kernel_order; x++)
+                for (int y = 0; y < kernel_order; y++)
+                    (*kernels)[m][x][y][c] = kernels_[m][c][x][y];
+        for (int w = 0; w < width; w++) {
+            for (int h = 0; h < height; h++) {
+                __m128d s2 = _mm_setzero_pd();
+                for (int x = 0; x < kernel_order; x++) {
+                    for (int y = 0; y < kernel_order; y++) {
+                        for (int c = 0; c < nchannels; c += 8) {
+                            __m128 i4_a = _mm_load_ps(&image[w+x][h+y][c]);
+                            __m128 k4_a = _mm_load_ps(&(*kernels)[m][x][y][c]);
+                            __m128 i4_b = _mm_load_ps(&image[w+x][h+y][c+4]);
+                            __m128 k4_b = _mm_load_ps(&(*kernels)[m][x][y][c+4]);
+                            __m128 p4_a = _mm_mul_ps(i4_a, k4_a);
+                            __m128 p4_b = _mm_mul_ps(i4_b, k4_b);
+                            __m128 p4 = _mm_add_ps(p4_a, p4_b);
+                            __m128d p4_01 = _mm_cvtps_pd(p4);
+                            __m128d p4_23 = _mm_cvtps_pd(_mm_shuffle_ps(p4, p4, _MM_SHUFFLE(3, 2, 3, 2)));
+                            __m128d p4_0123 = _mm_add_pd(p4_01, p4_23);
+                            s2 = _mm_add_pd(s2, p4_0123);
+                        }
+                    }
+                }
+                output[m][w][h] = _mm_hadd_pd(s2, s2)[0];
+                #ifdef PRINT_PLOT_TEXT
+                if (m == 0) printf("writing to (*t)[%d][%d][%d]\n", m, w, h);
+                #endif
+            }
+        }
+    }
 }
 
 int main(int argc, char ** argv)
 {
-  //float image[W][H][C];
-  //float kernels[M][C][K][K];
-  //float output[M][W][H];
+    //float image[W][H][C];
+    //float kernels[M][C][K][K];
+    //float output[M][W][H];
   
-  float *** image;
-  int16_t **** kernels;
-  float *** control_output, *** output;
-  long long mul_time;
-  int width, height, kernel_order, nchannels, nkernels;
-  struct timeval start_time;
-  struct timeval stop_time;
+    float *** image;
+    int16_t **** kernels;
+    float *** control_output, *** output;
+    long long mul_time;
+    int width, height, kernel_order, nchannels, nkernels;
+    struct timeval start_time;
+    struct timeval stop_time;
 
-  if ( argc != 6 ) {
-    fprintf(stderr, "Usage: conv-harness <image_width> <image_height> <kernel_order> <number of channels> <number of kernels>\n");
-    exit(1);
-  }
-  else {
-    width = atoi(argv[1]);
-    height = atoi(argv[2]);
-    kernel_order = atoi(argv[3]);
-    nchannels = atoi(argv[4]);
-    nkernels = atoi(argv[5]);
-  }
-  switch ( kernel_order ) {
-  case 1:
-  case 3:
-  case 5:
-  case 7: break;
-  default:
-    fprintf(stderr, "FATAL: kernel_order must be 1, 3, 5 or 7, not %d\n",
-            kernel_order);
-    exit(1);
-  }
+    if ( argc != 6 ) {
+        fprintf(stderr, "Usage: conv-harness <image_width> <image_height> <kernel_order> <number of channels> <number of kernels>\n");
+        exit(1);
+    }
+    else {
+        width = atoi(argv[1]);
+        height = atoi(argv[2]);
+        kernel_order = atoi(argv[3]);
+        nchannels = atoi(argv[4]);
+        nkernels = atoi(argv[5]);
+    }
+    switch ( kernel_order ) {
+    case 1:
+    case 3:
+    case 5:
+    case 7: break;
+    default:
+        fprintf(stderr, "FATAL: kernel_order must be 1, 3, 5 or 7, not %d\n",
+                kernel_order);
+        exit(1);
+    }
 
-  /* allocate the matrices */
-  image = gen_random_3d_matrix_float(width+kernel_order, height + kernel_order,
-                               nchannels);
-  kernels = gen_random_4d_matrix_int16(nkernels, nchannels, kernel_order, kernel_order);
-  output = new_empty_3d_matrix_float(nkernels, width, height);
-  control_output = new_empty_3d_matrix_float(nkernels, width, height);
+    /* allocate the matrices */
+    image = gen_random_3d_matrix_float(width+kernel_order, height + kernel_order,
+                                       nchannels);
+    kernels = gen_random_4d_matrix_int16(nkernels, nchannels, kernel_order, kernel_order);
+    output = new_empty_3d_matrix_float(nkernels, width, height);
+    control_output = new_empty_3d_matrix_float(nkernels, width, height);
 
-  //DEBUGGING(write_out(A, a_dim1, a_dim2));
+    //DEBUGGING(write_out(A, a_dim1, a_dim2));
 
-  /* use a simple multichannel convolution routine to produce control result */
-  multichannel_conv(image, kernels, control_output, width,
-                    height, nchannels, nkernels, kernel_order);
+    /* use a simple multichannel convolution routine to produce control result */
+    /* record starting time of student's code*/
+    gettimeofday(&start_time, NULL);
+    #ifndef NO_DAVID
+    multichannel_conv(image, kernels, control_output, width, height, nchannels, nkernels, kernel_order);
+    #endif
+    gettimeofday(&stop_time, NULL);
+    mul_time = (stop_time.tv_sec - start_time.tv_sec) * 1000000L +
+        (stop_time.tv_usec - start_time.tv_usec);
+    printf("Original conv time: %10lld microseconds\n", mul_time);
 
-  /* record starting time of student's code*/
-  gettimeofday(&start_time, NULL);
+    double real = mul_time;
 
-  /* perform student's multichannel convolution */
-  student_conv(image, kernels, output, width,
-                    height, nchannels, nkernels, kernel_order);
+    /* record starting time of student's code*/
+    gettimeofday(&start_time, NULL);
 
-  /* record finishing time */
-  gettimeofday(&stop_time, NULL);
-  mul_time = (stop_time.tv_sec - start_time.tv_sec) * 1000000L +
-    (stop_time.tv_usec - start_time.tv_usec);
-  printf("Student conv time: %lld microseconds\n", mul_time);
+    /* perform student's multichannel convolution */
+    student_conv(image, kernels, output, width,
+                 height, nchannels, nkernels, kernel_order);
 
-  DEBUGGING(write_out(output, nkernels, width, height));
+    /* record finishing time */
+    gettimeofday(&stop_time, NULL);
+    mul_time = (stop_time.tv_sec - start_time.tv_sec) * 1000000L +
+        (stop_time.tv_usec - start_time.tv_usec);
+    printf("Student conv time:  %10lld microseconds\n", mul_time);
 
-  /* now check that the student's multichannel convolution routine
-     gives the same answer as the known working version */
-  check_result(output, control_output, nkernels, width, height);
+    double fraudulent = mul_time;
 
-  return 0;
+    printf("Speedup factor %lf\n", real / fraudulent);
+
+    DEBUGGING(write_out(output, nkernels, width, height));
+
+    #ifndef NO_DAVID
+    /* now check that the student's multichannel convolution routine
+       gives the same answer as the known working version */
+    check_result(output, control_output, nkernels, width, height);
+    #endif
+
+    return 0;
 }

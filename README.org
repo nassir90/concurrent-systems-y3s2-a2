@@ -1,0 +1,29 @@
+#+title: Commands
+#+options: toc:nil
+
+* Benchmarking
+
+#+begin_example bash
+perl run.pl --benchmark --size massive
+#+end_example
+
+** Example Output on Stoker
+
+#+begin_example
+-- Configuring done
+-- Generating done
+-- Build files have been written to: ./build
+[100%] Built target concurrent
+Got: 112.038213606525x speedup (134559239 vs 1201012)
+Got: 109.188292097576x speedup (134487001 vs 1231698)
+Got: 139.315873648887x speedup (134844670 vs 967906)
+Got: 125.989441179773x speedup (134642396 vs 1068680)
+Got: 103.686820539774x speedup (134737809 vs 1299469)
+Got: 106.522635102419x speedup (135297488 vs 1270129)
+Got: 133.124832176309x speedup (134752017 vs 1012223)
+Got: 127.353412773953x speedup (134737491 vs 1057981)
+Got: 136.599096481031x speedup (134434274 vs 984152)
+Got: 141.645483114155x speedup (134453717 vs 949227)
+Got: 142.414752911829x speedup (134389824 vs 943651)
+Speedups = N(μ=125.261714, σ=14.850214)
+#+end_example
